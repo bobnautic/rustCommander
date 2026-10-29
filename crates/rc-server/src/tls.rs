@@ -15,11 +15,7 @@ pub struct CertPair {
 
 pub fn fingerprint_of_pem(cert_pem: &str) -> Option<String> {
     let start = cert_pem.find("-----BEGIN CERTIFICATE-----")?;
-    let body: String = cert_pem[start..]
-        .lines()
-        .skip(1)
-        .take_while(|l| !l.starts_with("-----END"))
-        .collect();
+    let body: String = cert_pem[start..].lines().skip(1).take_while(|l| !l.starts_with("-----END")).collect();
     use base64::Engine;
     let der = base64::engine::general_purpose::STANDARD.decode(body).ok()?;
     Some(fingerprint_of_der(&der))

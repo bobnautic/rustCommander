@@ -107,7 +107,13 @@ pub async fn start(session: &str, vfs: Arc<dyn Vfs>, mut spec: TunnelSpec) -> Re
         error: Mutex::new(None),
     });
     let stop = CancellationToken::new();
-    let t = Tunnel { id: uuid::Uuid::new_v4().to_string(), session: session.to_string(), spec: spec.clone(), counters: counters.clone(), stop: stop.clone() };
+    let t = Tunnel {
+        id: uuid::Uuid::new_v4().to_string(),
+        session: session.to_string(),
+        spec: spec.clone(),
+        counters: counters.clone(),
+        stop: stop.clone(),
+    };
     tracing::info!(session, "tunnel listening on {}:{}", spec.bind_host, spec.bind_port);
     tokio::spawn(async move {
         loop {

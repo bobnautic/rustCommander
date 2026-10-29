@@ -175,8 +175,11 @@ fn extract(ctx: &JobCtx, src: &Path, dst: &Path, format: ArchiveFormat) -> Resul
         }
         ArchiveFormat::Tar | ArchiveFormat::TarGz => {
             let file = BufReader::new(File::open(src)?);
-            let reader: Box<dyn std::io::Read> =
-                if format == ArchiveFormat::TarGz { Box::new(flate2::read::GzDecoder::new(file)) } else { Box::new(file) };
+            let reader: Box<dyn std::io::Read> = if format == ArchiveFormat::TarGz {
+                Box::new(flate2::read::GzDecoder::new(file))
+            } else {
+                Box::new(file)
+            };
             let mut ar = tar::Archive::new(reader);
             for entry in ar.entries()? {
                 if ctx.is_cancelled() {
@@ -211,7 +214,9 @@ mod tests {
         std::fs::write(base.join("data/a.txt"), b"alpha").unwrap();
         std::fs::write(base.join("data/sub/b.txt"), b"beta").unwrap();
         let q = JobQueue::new(1, Arc::new(|_| {}));
-        for (fmt, name) in [(ArchiveFormat::Zip, "x.zip"), (ArchiveFormat::TarGz, "x.tar.gz"), (ArchiveFormat::Tar, "x.tar")] {
+        for (fmt, name) in
+            [(ArchiveFormat::Zip, "x.zip"), (ArchiveFormat::TarGz, "x.tar.gz"), (ArchiveFormat::Tar, "x.tar")]
+        {
             let dst = from_native(&base.join(name));
             let t = ArchiveTask::Create { paths: vec![from_native(&base.join("data"))], dst: dst.clone(), format: fmt };
             let j = q.submit(JobKind::Transfer, JobSpec::default(), Arc::new(t), 0);

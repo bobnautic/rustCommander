@@ -31,7 +31,13 @@ pub async fn open(state: &Arc<AppState>, origin: &Origin, p: OpenParams) -> Resu
     let env = session.site.ssh.env.clone();
     let mut chan = session
         .vfs
-        .open_terminal(TerminalOptions { cols: p.cols.max(10), rows: p.rows.max(3), cwd: p.cwd.clone(), env, ..Default::default() })
+        .open_terminal(TerminalOptions {
+            cols: p.cols.max(10),
+            rows: p.rows.max(3),
+            cwd: p.cwd.clone(),
+            env,
+            ..Default::default()
+        })
         .await?;
     let id = uuid::Uuid::new_v4().to_string();
     let title = if session.summary.username.is_empty() {

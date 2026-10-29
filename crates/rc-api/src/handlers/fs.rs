@@ -115,7 +115,8 @@ pub fn delete(state: &AppState, p: PathsParams) -> Result<Job> {
     } else {
         format!("Delete {} items", p.paths.len())
     };
-    let spec = JobSpec { title, src_session: Some(p.session.clone()), src_paths: p.paths.clone(), ..Default::default() };
+    let spec =
+        JobSpec { title, src_session: Some(p.session.clone()), src_paths: p.paths.clone(), ..Default::default() };
     let task = DeleteTask { target: Endpoint::new(p.session, vfs), paths: p.paths };
     Ok(state.jobs.submit(JobKind::Delete, spec, Arc::new(task), 0))
 }
@@ -243,7 +244,10 @@ pub async fn write_text(state: &AppState, p: WriteParams) -> Result<()> {
     let bytes: Vec<u8> = if p.encoding.as_deref() == Some("latin1") {
         p.content
             .chars()
-            .map(|c| u8::try_from(c as u32).map_err(|_| Error::InvalidInput(format!("character {c:?} cannot be saved as Latin-1"))))
+            .map(|c| {
+                u8::try_from(c as u32)
+                    .map_err(|_| Error::InvalidInput(format!("character {c:?} cannot be saved as Latin-1")))
+            })
             .collect::<Result<Vec<u8>>>()?
     } else {
         p.content.into_bytes()
@@ -314,7 +318,8 @@ pub struct ExecParams {
 
 /// Web clients may only run local commands when the server allows terminals.
 pub fn check_local_shell(state: &AppState, origin: &Origin, session: &str) -> Result<()> {
-    if session == LOCAL_SESSION && matches!(origin, Origin::Web { .. }) && !state.settings.read().server.allow_terminal {
+    if session == LOCAL_SESSION && matches!(origin, Origin::Web { .. }) && !state.settings.read().server.allow_terminal
+    {
         return Err(Error::PermissionDenied("shell access is disabled on this server".into()));
     }
     Ok(())

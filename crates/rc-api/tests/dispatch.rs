@@ -8,7 +8,8 @@ use rc_api::{dispatch, AppMode, AppState, InitOptions, Origin};
 
 async fn state() -> (tempfile::TempDir, Arc<AppState>) {
     let dir = tempfile::tempdir().unwrap();
-    let st = AppState::new(InitOptions { mode: AppMode::Desktop, config_dir: Some(dir.path().join("cfg")) }).await.unwrap();
+    let st =
+        AppState::new(InitOptions { mode: AppMode::Desktop, config_dir: Some(dir.path().join("cfg")) }).await.unwrap();
     (dir, st)
 }
 
@@ -67,7 +68,12 @@ async fn contract_shapes() {
     let from = call(&st, "sites.fromUrl", json!({ "url": "user@host:2222" })).await;
     assert_eq!(from["protocol"], "sftp");
     assert_eq!(from["port"], 2222);
-    let imported = call(&st, "sites.import", json!({ "format": "openssh", "content": "Host box\n  HostName 10.0.0.1\n  User me\n" })).await;
+    let imported = call(
+        &st,
+        "sites.import",
+        json!({ "format": "openssh", "content": "Host box\n  HostName 10.0.0.1\n  User me\n" }),
+    )
+    .await;
     assert_eq!(imported["imported"], 1);
 
     // Sessions and file operations on the local session.
@@ -90,7 +96,8 @@ async fn contract_shapes() {
     }
     let size = call(&st, "fs.dirSize", json!({ "session": "local", "path": work.clone() })).await;
     assert_eq!(size["files"], 2);
-    let sum = call(&st, "fs.checksum", json!({ "session": "local", "path": format!("{work}/a/y.txt"), "algo": "md5" })).await;
+    let sum =
+        call(&st, "fs.checksum", json!({ "session": "local", "path": format!("{work}/a/y.txt"), "algo": "md5" })).await;
     assert_eq!(sum, "49f68a5c8493ec2c0bf489821c21fc3b");
 
     // Transfer with a conflict question answered through jobs.resolveConflict.
@@ -129,14 +136,29 @@ async fn contract_shapes() {
     // Delete job, bookmarks, custom commands, archive.
     let job = call(&st, "fs.delete", json!({ "session": "local", "paths": [format!("{base}/mirror")] })).await;
     assert_eq!(wait_job(&st, job["id"].as_str().unwrap()).await["state"], "completed");
-    let b = call(&st, "bookmarks.save", json!({ "bookmark": { "id": "", "name": "Work", "scope": "local", "path": work } })).await;
+    let b = call(
+        &st,
+        "bookmarks.save",
+        json!({ "bookmark": { "id": "", "name": "Work", "scope": "local", "path": work } }),
+    )
+    .await;
     assert_eq!(call(&st, "bookmarks.list", Value::Null).await.as_array().unwrap().len(), 1);
     call(&st, "bookmarks.delete", json!({ "id": b["id"] })).await;
     if cfg!(unix) {
-        let out = call(&st, "commands.run", json!({ "command": "ls !&", "session": "local", "cwd": format!("{work}/a"), "names": ["y.txt"] })).await;
+        let out = call(
+            &st,
+            "commands.run",
+            json!({ "command": "ls !&", "session": "local", "cwd": format!("{work}/a"), "names": ["y.txt"] }),
+        )
+        .await;
         assert_eq!(out[0]["stdout"], "y.txt\n");
     }
-    let job = call(&st, "archive.create", json!({ "session": "local", "paths": [format!("{work}/a")], "dst": format!("{base}/a.zip"), "format": "zip" })).await;
+    let job = call(
+        &st,
+        "archive.create",
+        json!({ "session": "local", "paths": [format!("{work}/a")], "dst": format!("{base}/a.zip"), "format": "zip" }),
+    )
+    .await;
     assert_eq!(wait_job(&st, job["id"].as_str().unwrap()).await["state"], "completed");
     call(&st, "jobs.clearFinished", Value::Null).await;
     assert_eq!(call(&st, "jobs.list", Value::Null).await, json!([]));
@@ -166,7 +188,8 @@ async fn contract_shapes() {
             if let Ok(Ok(ev)) = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv()).await {
                 if ev.name == "terminal.data" {
                     use base64::Engine;
-                    let bytes = base64::engine::general_purpose::STANDARD.decode(ev.payload["data"].as_str().unwrap()).unwrap();
+                    let bytes =
+                        base64::engine::general_purpose::STANDARD.decode(ev.payload["data"].as_str().unwrap()).unwrap();
                     out.push_str(&String::from_utf8_lossy(&bytes));
                 }
             }

@@ -162,7 +162,13 @@ pub struct RunCommandParams {
 pub async fn command_run(state: &Arc<AppState>, origin: &Origin, p: RunCommandParams) -> Result<Vec<ExecOutput>> {
     let (cmd, per_file, local) = match (&p.id, &p.command) {
         (Some(id), _) if !id.is_empty() => {
-            let c = state.commands.lock().iter().find(|c| &c.id == id).cloned().ok_or_else(|| Error::NotFound(format!("command {id}")))?;
+            let c = state
+                .commands
+                .lock()
+                .iter()
+                .find(|c| &c.id == id)
+                .cloned()
+                .ok_or_else(|| Error::NotFound(format!("command {id}")))?;
             (c.command, c.per_file, c.target == "local")
         }
         (_, Some(c)) if !c.trim().is_empty() => (c.clone(), false, false),

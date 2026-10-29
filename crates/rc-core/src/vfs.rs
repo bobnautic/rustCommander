@@ -72,9 +72,7 @@ pub async fn read_to_end(vfs: &dyn Vfs, path: &str, limit: u64) -> Result<Vec<u8
 
 /// Write a whole buffer to a file (create/truncate).
 pub async fn write_all(vfs: &dyn Vfs, path: &str, data: &[u8]) -> Result<()> {
-    let mut w = vfs
-        .open_write(path, WriteOptions { size_hint: Some(data.len() as u64), ..Default::default() })
-        .await?;
+    let mut w = vfs.open_write(path, WriteOptions { size_hint: Some(data.len() as u64), ..Default::default() }).await?;
     w.write_all(data).await?;
     w.finish().await
 }

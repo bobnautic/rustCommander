@@ -46,7 +46,9 @@ pub async fn connect(site: &SiteConfig, ctx: &ConnectContext) -> Result<Arc<dyn 
         #[cfg(feature = "ftp")]
         Protocol::Ftp => crate::protocols::ftp::connect(site, ctx).await,
         #[cfg(feature = "cloud")]
-        Protocol::Webdav | Protocol::S3 | Protocol::Azure | Protocol::Gcs => crate::protocols::cloud::connect(site, ctx).await,
+        Protocol::Webdav | Protocol::S3 | Protocol::Azure | Protocol::Gcs => {
+            crate::protocols::cloud::connect(site, ctx).await
+        }
         Protocol::Rcmd => crate::protocols::rcmd::connect(site, ctx).await,
         #[allow(unreachable_patterns)]
         p => Err(Error::unsupported(format!("protocol {p:?} is not compiled into this build"))),

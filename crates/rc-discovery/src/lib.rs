@@ -99,7 +99,14 @@ pub struct PeerWeb {
 }
 
 impl Peer {
-    fn from_info(info: &InstanceInfo, addresses: Vec<String>, last_seen: i64, manual: bool, is_self: bool, online: bool) -> Peer {
+    fn from_info(
+        info: &InstanceInfo,
+        addresses: Vec<String>,
+        last_seen: i64,
+        manual: bool,
+        is_self: bool,
+        online: bool,
+    ) -> Peer {
         let web = info.web.as_ref().map(|w| {
             let host = addresses.first().cloned().unwrap_or_else(|| "127.0.0.1".into());
             let host = if host.contains(':') { format!("[{host}]") } else { host };
@@ -554,7 +561,14 @@ impl Inner {
             .values()
             .map(|e| {
                 let online = !self.is_offline_entry(Some(e));
-                Peer::from_info(&e.info, e.addresses.iter().map(|a| a.to_string()).collect(), e.last_seen_ms, e.manual, false, online)
+                Peer::from_info(
+                    &e.info,
+                    e.addresses.iter().map(|a| a.to_string()).collect(),
+                    e.last_seen_ms,
+                    e.manual,
+                    false,
+                    online,
+                )
             })
             .collect();
         others.sort_by(|a, b| b.online.cmp(&a.online).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
@@ -578,7 +592,12 @@ pub async fn scan(port: u16, wait: Duration) -> std::io::Result<Vec<Peer>> {
         user: None,
         web: None,
     };
-    let d = Discovery::start(DiscoveryConfig { port, interval: Duration::from_secs(1), announce: false }, info, Arc::new(|_| {})).await?;
+    let d = Discovery::start(
+        DiscoveryConfig { port, interval: Duration::from_secs(1), announce: false },
+        info,
+        Arc::new(|_| {}),
+    )
+    .await?;
     tokio::time::sleep(wait).await;
     let peers = d.peers().into_iter().filter(|p| !p.is_self).collect();
     d.stop();

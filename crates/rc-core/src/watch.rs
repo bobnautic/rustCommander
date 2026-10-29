@@ -124,7 +124,13 @@ pub fn start(
                 let remote_target = vpath::join(&params.remote_path, &rel);
                 match local.vfs.try_stat(&p).await {
                     Ok(Some(e)) => {
-                        let t = MaskTarget { name: &name, rel_path: &rel, is_dir: e.is_dir(), size: e.size, modified: e.modified };
+                        let t = MaskTarget {
+                            name: &name,
+                            rel_path: &rel,
+                            is_dir: e.is_dir(),
+                            size: e.size,
+                            modified: e.modified,
+                        };
                         if !mask.matches(&t) {
                             continue;
                         }
@@ -143,8 +149,19 @@ pub fn start(
                     st.lock().error = Some(e.to_string());
                     continue;
                 }
-                let opts = TransferOptions { overwrite: OverwriteMode::Overwrite, move_files: false, new_name: None, ..params.options.clone() };
-                let task = TransferTask { src: local.clone(), src_paths: vec![src.clone()], dst: params.remote.clone(), dst_dir: dst_dir.clone(), options: opts };
+                let opts = TransferOptions {
+                    overwrite: OverwriteMode::Overwrite,
+                    move_files: false,
+                    new_name: None,
+                    ..params.options.clone()
+                };
+                let task = TransferTask {
+                    src: local.clone(),
+                    src_paths: vec![src.clone()],
+                    dst: params.remote.clone(),
+                    dst_dir: dst_dir.clone(),
+                    options: opts,
+                };
                 let spec = JobSpec {
                     title: format!("Keep up to date: {}", vpath::file_name(&src)),
                     src_session: Some(local.session.clone()),
@@ -166,7 +183,12 @@ pub fn start(
                     ..Default::default()
                 };
                 st.lock().last_event = Some(format!("delete {}", deletes.join(", ")));
-                queue.submit(JobKind::Delete, spec, Arc::new(DeleteTask { target: params.remote.clone(), paths: deletes }), 0);
+                queue.submit(
+                    JobKind::Delete,
+                    spec,
+                    Arc::new(DeleteTask { target: params.remote.clone(), paths: deletes }),
+                    0,
+                );
             }
             on_update(st.lock().clone());
         }

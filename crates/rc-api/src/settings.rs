@@ -16,7 +16,12 @@ pub struct DiscoverySettings {
 
 impl Default for DiscoverySettings {
     fn default() -> Self {
-        DiscoverySettings { enabled: true, port: rc_discovery::DEFAULT_PORT, instance_name: String::new(), interval_secs: 5 }
+        DiscoverySettings {
+            enabled: true,
+            port: rc_discovery::DEFAULT_PORT,
+            instance_name: String::new(),
+            interval_secs: 5,
+        }
     }
 }
 

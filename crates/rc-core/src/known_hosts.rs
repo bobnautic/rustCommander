@@ -28,7 +28,9 @@ pub enum HostKeyStatus {
     Trusted,
     Unknown,
     /// A different fingerprint is stored.
-    Mismatch { stored: KnownHost },
+    Mismatch {
+        stored: KnownHost,
+    },
 }
 
 /// JSON-backed store of trusted keys.

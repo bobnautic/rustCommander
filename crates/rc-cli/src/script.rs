@@ -75,7 +75,10 @@ impl Args {
         let mut switches = Vec::new();
         let mut params = Vec::new();
         for t in tokens {
-            if let Some(s) = t.strip_prefix('-').filter(|s| !s.is_empty() && !s.starts_with('-') && !s.chars().next().unwrap_or('0').is_ascii_digit()) {
+            if let Some(s) = t
+                .strip_prefix('-')
+                .filter(|s| !s.is_empty() && !s.starts_with('-') && !s.chars().next().unwrap_or('0').is_ascii_digit())
+            {
                 match s.split_once('=') {
                     Some((k, v)) => switches.push((k.to_ascii_lowercase(), Some(v.to_string()))),
                     None => switches.push((s.to_ascii_lowercase(), None)),
@@ -143,7 +146,15 @@ impl Script {
         let known_hosts = Arc::new(KnownHosts::load(dir.join("known_hosts.json")));
         let local: Arc<dyn Vfs> = Arc::new(LocalVfs::new());
         let lcwd = rc_core::local::from_native(&std::env::current_dir()?);
-        Ok(Script { known_hosts, sites, queue: JobQueue::new(1, Arc::new(|_| {})), local, lcwd, remote: None, interactive })
+        Ok(Script {
+            known_hosts,
+            sites,
+            queue: JobQueue::new(1, Arc::new(|_| {})),
+            local,
+            lcwd,
+            remote: None,
+            interactive,
+        })
     }
 
     fn remote(&self) -> Result<&Remote> {
@@ -166,7 +177,23 @@ impl Script {
         }
         let dir = vpath::parent(path);
         let mask = FileMask::parse(name).map_err(|e| anyhow!(e))?;
-        let mut out: Vec<String> = vfs.list(&dir).await?.into_iter().filter(|e| mask.matches_name(&e.name) || (e.is_dir() && mask.matches(&rc_core::mask::MaskTarget { name: &e.name, rel_path: &e.name, is_dir: false, size: 0, modified: None }))).map(|e| e.path).collect();
+        let mut out: Vec<String> = vfs
+            .list(&dir)
+            .await?
+            .into_iter()
+            .filter(|e| {
+                mask.matches_name(&e.name)
+                    || (e.is_dir()
+                        && mask.matches(&rc_core::mask::MaskTarget {
+                            name: &e.name,
+                            rel_path: &e.name,
+                            is_dir: false,
+                            size: 0,
+                            modified: None,
+                        }))
+            })
+            .map(|e| e.path)
+            .collect();
         out.sort();
         if out.is_empty() {
             bail!("no file matches {path}");
@@ -174,7 +201,13 @@ impl Script {
         Ok(out)
     }
 
-    async fn run_job(&self, kind: JobKind, title: String, task: Arc<dyn rc_core::jobs::JobTask>, speed: u64) -> Result<()> {
+    async fn run_job(
+        &self,
+        kind: JobKind,
+        title: String,
+        task: Arc<dyn rc_core::jobs::JobTask>,
+        speed: u64,
+    ) -> Result<()> {
         let job = self.queue.submit(kind, JobSpec { title: title.clone(), ..Default::default() }, task, speed);
         let tty = std::io::stderr().is_terminal();
         loop {
@@ -184,7 +217,10 @@ impl Script {
                 self.queue.resolve_conflict(
                     &j.id,
                     &c.id,
-                    rc_core::jobs::ConflictDecision { action: rc_core::jobs::ConflictAction::Overwrite, new_name: None },
+                    rc_core::jobs::ConflictDecision {
+                        action: rc_core::jobs::ConflictAction::Overwrite,
+                        new_name: None,
+                    },
                     true,
                 )?;
             }
@@ -204,7 +240,12 @@ impl Script {
             if tty {
                 let pct = (j.bytes_done * 100).checked_div(j.bytes_total).unwrap_or(0);
                 let cur = j.current_file.as_deref().map(vpath::file_name).unwrap_or("");
-                eprint!("\r\x1b[K{pct:>3}% {} / {}  {}/s  {cur}", human(j.bytes_done), human(j.bytes_total), human(j.speed as u64));
+                eprint!(
+                    "\r\x1b[K{pct:>3}% {} / {}  {}/s  {cur}",
+                    human(j.bytes_done),
+                    human(j.bytes_total),
+                    human(j.speed as u64)
+                );
             }
             tokio::time::sleep(Duration::from_millis(300)).await;
         }
@@ -286,12 +327,22 @@ impl Script {
                 if args.flag("scp") {
                     site.protocol = rc_core::Protocol::Scp;
                 }
-                let prompter = CliPrompter { interactive: self.interactive, hostkey: args.value("hostkey"), password: site.password.clone() };
-                let ctx = ConnectContext { prompter: Arc::new(prompter), known_hosts: self.known_hosts.clone(), session_id: "script".into() };
+                let prompter = CliPrompter {
+                    interactive: self.interactive,
+                    hostkey: args.value("hostkey"),
+                    password: site.password.clone(),
+                };
+                let ctx = ConnectContext {
+                    prompter: Arc::new(prompter),
+                    known_hosts: self.known_hosts.clone(),
+                    session_id: "script".into(),
+                };
                 if let Some(r) = self.remote.take() {
                     let _ = r.vfs.close().await;
                 }
-                let vfs = rc_core::connect(&site, &ctx).await.with_context(|| format!("connecting to {}", site.display_name()))?;
+                let vfs = rc_core::connect(&site, &ctx)
+                    .await
+                    .with_context(|| format!("connecting to {}", site.display_name()))?;
                 let home = vfs.home().await.unwrap_or_else(|_| "/".into());
                 let cwd = if site.remote_dir.is_empty() { home } else { site.remote_dir.clone() };
                 println!("Connected to {} ({})", site.display_name(), cwd);
@@ -350,9 +401,14 @@ impl Script {
                 if p.is_empty() {
                     bail!("usage: {cmd} <source...> [target]");
                 }
-                let (sources, target) = if p.len() >= 2 { (&p[..p.len() - 1], Some(p[p.len() - 1].clone())) } else { (&p[..], None) };
+                let (sources, target) =
+                    if p.len() >= 2 { (&p[..p.len() - 1], Some(p[p.len() - 1].clone())) } else { (&p[..], None) };
                 let remote = self.remote()?;
-                let (src_vfs, dst_vfs) = if upload { (self.local.clone(), remote.vfs.clone()) } else { (remote.vfs.clone(), self.local.clone()) };
+                let (src_vfs, dst_vfs) = if upload {
+                    (self.local.clone(), remote.vfs.clone())
+                } else {
+                    (remote.vfs.clone(), self.local.clone())
+                };
                 let mut src_paths = Vec::new();
                 for s in sources {
                     let full = if upload { self.lpath(s) } else { self.rpath(s)? };
@@ -360,7 +416,13 @@ impl Script {
                 }
                 let mut opts = Self::transfer_options(&args);
                 let dst_dir = match &target {
-                    None => if upload { remote.cwd.clone() } else { self.lcwd.clone() },
+                    None => {
+                        if upload {
+                            remote.cwd.clone()
+                        } else {
+                            self.lcwd.clone()
+                        }
+                    }
                     Some(t) => {
                         let full = if upload { self.rpath(t)? } else { self.lpath(t) };
                         let ends_dir = t.ends_with('/') || t.ends_with('\\');
@@ -377,8 +439,15 @@ impl Script {
                 };
                 let speed = opts.speed_limit;
                 let (src_ep, dst_ep) = (Endpoint::new("src", src_vfs), Endpoint::new("dst", dst_vfs));
-                let task = TransferTask { src: src_ep, src_paths, dst: dst_ep, dst_dir: dst_dir.clone(), options: opts };
-                self.run_job(JobKind::Transfer, format!("{} → {dst_dir}", if upload { "Upload" } else { "Download" }), Arc::new(task), speed).await?;
+                let task =
+                    TransferTask { src: src_ep, src_paths, dst: dst_ep, dst_dir: dst_dir.clone(), options: opts };
+                self.run_job(
+                    JobKind::Transfer,
+                    format!("{} → {dst_dir}", if upload { "Upload" } else { "Download" }),
+                    Arc::new(task),
+                    speed,
+                )
+                .await?;
             }
             "rm" | "rmdir" => {
                 let r = self.remote()?;
@@ -414,7 +483,13 @@ impl Script {
                 }
                 let r = self.remote()?;
                 let ep = Endpoint::new("r", r.vfs.clone());
-                let task = TransferTask { src: ep.clone(), src_paths: vec![self.rpath(&p[0])?], dst: ep, dst_dir: self.rpath(&p[1])?, options: TransferOptions { overwrite: OverwriteMode::Overwrite, ..Default::default() } };
+                let task = TransferTask {
+                    src: ep.clone(),
+                    src_paths: vec![self.rpath(&p[0])?],
+                    dst: ep,
+                    dst_dir: self.rpath(&p[1])?,
+                    options: TransferOptions { overwrite: OverwriteMode::Overwrite, ..Default::default() },
+                };
                 self.run_job(JobKind::Transfer, "Copy".into(), Arc::new(task), 0).await?;
             }
             "chmod" => {
@@ -437,7 +512,11 @@ impl Script {
                 self.remote()?.vfs.symlink(&p[0], &link).await?;
             }
             "stat" => {
-                let e = self.remote()?.vfs.stat(&self.rpath(p.first().ok_or_else(|| anyhow!("usage: stat <path>"))?)?).await?;
+                let e = self
+                    .remote()?
+                    .vfs
+                    .stat(&self.rpath(p.first().ok_or_else(|| anyhow!("usage: stat <path>"))?)?)
+                    .await?;
                 println!("{}", format_entry(&e));
             }
             "checksum" => {
@@ -464,7 +543,10 @@ impl Script {
                 }
             }
             "synchronize" | "sync" => {
-                let dir = p.first().ok_or_else(|| anyhow!("usage: synchronize <local|remote|both> [local] [remote]"))?.to_ascii_lowercase();
+                let dir = p
+                    .first()
+                    .ok_or_else(|| anyhow!("usage: synchronize <local|remote|both> [local] [remote]"))?
+                    .to_ascii_lowercase();
                 let direction = match dir.as_str() {
                     "remote" => SyncDirection::LeftToRight,
                     "local" => SyncDirection::RightToLeft,
@@ -504,8 +586,10 @@ impl Script {
                 if args.flag("preview") {
                     return Ok(true);
                 }
-                let actions: Vec<_> = plan.actions.into_iter().filter(|a| a.action != rc_core::sync::SyncActionKind::Conflict).collect();
-                let task = rc_core::sync::SyncTask { left, right, params, actions, options: Self::transfer_options(&args) };
+                let actions: Vec<_> =
+                    plan.actions.into_iter().filter(|a| a.action != rc_core::sync::SyncActionKind::Conflict).collect();
+                let task =
+                    rc_core::sync::SyncTask { left, right, params, actions, options: Self::transfer_options(&args) };
                 self.run_job(JobKind::Sync, "Synchronize".into(), Arc::new(task), 0).await?;
             }
             "keepuptodate" => {
@@ -622,7 +706,8 @@ mod tests {
         let mut s = Script::new(Some(cfg.path().to_path_buf()), false).await.unwrap();
         // A "remote" session on the local file system via file:// is not a protocol, so
         // open the local vfs directly for the test.
-        s.remote = Some(Remote { name: "test".into(), vfs: Arc::new(LocalVfs::new()), cwd: vpath::join(&base, "remote") });
+        s.remote =
+            Some(Remote { name: "test".into(), vfs: Arc::new(LocalVfs::new()), cwd: vpath::join(&base, "remote") });
         s.lcwd = vpath::join(&base, "src");
         s.execute("put *.txt").await.unwrap();
         assert!(dir.path().join("remote/a.txt").exists());

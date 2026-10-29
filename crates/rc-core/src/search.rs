@@ -75,7 +75,8 @@ pub async fn search(
         if !name_mask.is_empty() && !name_mask.matches_name(&e.name) {
             return Ok(true);
         }
-        if !item.is_dir && (params.min_size.is_some_and(|m| e.size < m) || params.max_size.is_some_and(|m| e.size > m)) {
+        if !item.is_dir && (params.min_size.is_some_and(|m| e.size < m) || params.max_size.is_some_and(|m| e.size > m))
+        {
             return Ok(true);
         }
         if let Some(after) = params.modified_after {
@@ -125,7 +126,13 @@ pub async fn search(
     Ok(summary)
 }
 
-async fn contains(vfs: &dyn Vfs, path: &str, needle: &[u8], case_sensitive: bool, cancel: &CancellationToken) -> Result<bool> {
+async fn contains(
+    vfs: &dyn Vfs,
+    path: &str,
+    needle: &[u8],
+    case_sensitive: bool,
+    cancel: &CancellationToken,
+) -> Result<bool> {
     let mut r = vfs.open_read(path, 0).await?;
     let mut buf = vec![0u8; 256 * 1024];
     let keep = needle.len().saturating_sub(1);

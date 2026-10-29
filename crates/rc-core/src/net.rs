@@ -55,7 +55,8 @@ async fn socks5(host: &str, port: u16, proxy: &ProxyOptions) -> Result<TcpStream
 
 async fn http_connect(host: &str, port: u16, proxy: &ProxyOptions) -> Result<TcpStream> {
     let pport = if proxy.port == 0 { 8080 } else { proxy.port };
-    let mut s = TcpStream::connect((proxy.host.as_str(), pport)).await.map_err(|e| connect_error(&proxy.host, pport, e))?;
+    let mut s =
+        TcpStream::connect((proxy.host.as_str(), pport)).await.map_err(|e| connect_error(&proxy.host, pport, e))?;
     let authority = if host.contains(':') { format!("[{host}]:{port}") } else { format!("{host}:{port}") };
     let mut req = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n");
     if !proxy.username.is_empty() {

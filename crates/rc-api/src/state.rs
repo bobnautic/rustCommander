@@ -36,7 +36,9 @@ pub enum AppMode {
 #[derive(Debug, Clone)]
 pub enum Origin {
     Desktop,
-    Web { remote: Option<String> },
+    Web {
+        remote: Option<String>,
+    },
     /// In-process callers (CLI scripting, tests).
     Internal,
 }
@@ -193,7 +195,8 @@ impl AppState {
             }
         };
         let bookmarks: Vec<Bookmark> = load_json(&config_dir.join("bookmarks.json")).unwrap_or_default();
-        let commands: Vec<CustomCommand> = load_json(&config_dir.join("commands.json")).unwrap_or_else(|_| default_commands());
+        let commands: Vec<CustomCommand> =
+            load_json(&config_dir.join("commands.json")).unwrap_or_else(|_| default_commands());
 
         let ev = events.clone();
         let notified: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
@@ -206,7 +209,8 @@ impl AppState {
                             ev.emit("fs.changed", serde_json::json!({ "session": s, "path": d }));
                         }
                         if let Some(s) = &job.src_session {
-                            let mut parents: Vec<String> = job.src_paths.iter().map(|p| rc_core::path::parent(p)).collect();
+                            let mut parents: Vec<String> =
+                                job.src_paths.iter().map(|p| rc_core::path::parent(p)).collect();
                             parents.dedup();
                             for p in parents {
                                 ev.emit("fs.changed", serde_json::json!({ "session": s, "path": p }));
@@ -373,7 +377,9 @@ impl AppState {
             interval: Duration::from_secs(cfg.interval_secs.clamp(1, 300)),
             announce: true,
         };
-        match Discovery::start(config, self.instance_info(), Arc::new(move |peers| ev.emit("discovery.peers", peers))).await {
+        match Discovery::start(config, self.instance_info(), Arc::new(move |peers| ev.emit("discovery.peers", peers)))
+            .await
+        {
             Ok(d) => {
                 *self.discovery.lock() = Some(d);
             }

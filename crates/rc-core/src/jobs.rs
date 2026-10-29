@@ -124,7 +124,10 @@ pub struct RateLimiter {
 
 impl RateLimiter {
     pub fn new(bytes_per_sec: u64) -> Self {
-        RateLimiter { bytes_per_sec: AtomicU64::new(bytes_per_sec), state: tokio::sync::Mutex::new((Instant::now(), 0.0)) }
+        RateLimiter {
+            bytes_per_sec: AtomicU64::new(bytes_per_sec),
+            state: tokio::sync::Mutex::new((Instant::now(), 0.0)),
+        }
     }
 
     pub fn set(&self, bytes_per_sec: u64) {
@@ -517,13 +520,7 @@ impl JobQueue {
     }
 
     fn find(&self, id: &str) -> Result<Arc<JobInner>> {
-        self.inner
-            .jobs
-            .lock()
-            .iter()
-            .find(|j| j.id == id)
-            .cloned()
-            .ok_or_else(|| Error::NotFound(format!("job {id}")))
+        self.inner.jobs.lock().iter().find(|j| j.id == id).cloned().ok_or_else(|| Error::NotFound(format!("job {id}")))
     }
 
     pub fn list(&self) -> Vec<Job> {
@@ -553,8 +550,7 @@ impl JobQueue {
         {
             let mut p = j.progress.lock();
             if p.snapshot.state == JobState::Paused {
-                p.snapshot.state =
-                    if p.snapshot.started_at.is_some() { JobState::Running } else { JobState::Queued };
+                p.snapshot.state = if p.snapshot.started_at.is_some() { JobState::Running } else { JobState::Queued };
             }
         }
         self.inner.emit(&j);
@@ -604,7 +600,13 @@ impl JobQueue {
         }
     }
 
-    pub fn resolve_conflict(&self, id: &str, conflict_id: &str, decision: ConflictDecision, apply_to_all: bool) -> Result<()> {
+    pub fn resolve_conflict(
+        &self,
+        id: &str,
+        conflict_id: &str,
+        decision: ConflictDecision,
+        apply_to_all: bool,
+    ) -> Result<()> {
         let j = self.find(id)?;
         let tx = {
             let mut p = j.progress.lock();

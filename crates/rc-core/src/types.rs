@@ -58,8 +58,7 @@ impl FileEntry {
 
     /// True for directories and for symlinks pointing to directories.
     pub fn is_dir(&self) -> bool {
-        self.kind == FileKind::Dir
-            || (self.kind == FileKind::Symlink && self.target_kind == Some(FileKind::Dir))
+        self.kind == FileKind::Dir || (self.kind == FileKind::Symlink && self.target_kind == Some(FileKind::Dir))
     }
 
     pub fn is_file(&self) -> bool {
@@ -131,29 +130,30 @@ pub fn parse_mode_string(s: &str) -> Option<u32> {
     }
     let c: Vec<char> = s.chars().collect();
     let mut mode = 0u32;
-    let triplet = |r: char, w: char, x: char, shift: u32, special: u32, special_set: char, special_noexec: char| -> Option<u32> {
-        let mut m = 0;
-        match r {
-            'r' => m |= 0o4 << shift,
-            '-' => {}
-            _ => return None,
-        }
-        match w {
-            'w' => m |= 0o2 << shift,
-            '-' => {}
-            _ => return None,
-        }
-        if x == 'x' {
-            m |= 0o1 << shift;
-        } else if x == special_set {
-            m |= (0o1 << shift) | special;
-        } else if x == special_noexec {
-            m |= special;
-        } else if x != '-' {
-            return None;
-        }
-        Some(m)
-    };
+    let triplet =
+        |r: char, w: char, x: char, shift: u32, special: u32, special_set: char, special_noexec: char| -> Option<u32> {
+            let mut m = 0;
+            match r {
+                'r' => m |= 0o4 << shift,
+                '-' => {}
+                _ => return None,
+            }
+            match w {
+                'w' => m |= 0o2 << shift,
+                '-' => {}
+                _ => return None,
+            }
+            if x == 'x' {
+                m |= 0o1 << shift;
+            } else if x == special_set {
+                m |= (0o1 << shift) | special;
+            } else if x == special_noexec {
+                m |= special;
+            } else if x != '-' {
+                return None;
+            }
+            Some(m)
+        };
     mode |= triplet(c[0], c[1], c[2], 6, 0o4000, 's', 'S')?;
     mode |= triplet(c[3], c[4], c[5], 3, 0o2000, 's', 'S')?;
     mode |= triplet(c[6], c[7], c[8], 0, 0o1000, 't', 'T')?;

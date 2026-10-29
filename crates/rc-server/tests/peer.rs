@@ -12,13 +12,15 @@ use rc_core::{ConnectContext, KnownHosts, LocalVfs, Protocol, SiteConfig, Vfs};
 #[tokio::test(flavor = "multi_thread")]
 async fn peer_file_access() {
     let cfg = tempfile::tempdir().unwrap();
-    let state = AppState::new(InitOptions { mode: AppMode::Web, config_dir: Some(cfg.path().to_path_buf()) }).await.unwrap();
+    let state =
+        AppState::new(InitOptions { mode: AppMode::Web, config_dir: Some(cfg.path().to_path_buf()) }).await.unwrap();
     state.server_auth.set_password("secret-pw").unwrap();
     let server = rc_server::WebServer::new();
     *state.server.write() = Some(server.clone() as Arc<dyn ServerControl>);
     let running = server.start(state.clone(), "127.0.0.1".into(), 0, true).await.unwrap();
 
-    let mut site = SiteConfig { protocol: Protocol::Rcmd, host: "127.0.0.1".into(), port: running.port, ..Default::default() };
+    let mut site =
+        SiteConfig { protocol: Protocol::Rcmd, host: "127.0.0.1".into(), port: running.port, ..Default::default() };
     site.rcmd.tls = true;
     let kh = Arc::new(KnownHosts::in_memory());
     let ctx = ConnectContext { prompter: Arc::new(AcceptAllPrompter), known_hosts: kh.clone(), session_id: "t".into() };
@@ -43,7 +45,10 @@ async fn peer_file_access() {
     let list = peer.list(&format!("{base}/remote/sub")).await.unwrap();
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].size, data.len() as u64);
-    assert_eq!(rc_core::vfs::read_to_end(peer.as_ref(), &format!("{base}/remote/sub/f.bin"), 10_000_000).await.unwrap(), data);
+    assert_eq!(
+        rc_core::vfs::read_to_end(peer.as_ref(), &format!("{base}/remote/sub/f.bin"), 10_000_000).await.unwrap(),
+        data
+    );
 
     // Resume download through the queue.
     let local: Arc<dyn Vfs> = Arc::new(LocalVfs::new());

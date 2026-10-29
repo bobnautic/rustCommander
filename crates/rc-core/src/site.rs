@@ -32,7 +32,13 @@ pub struct FtpOptions {
 
 impl Default for FtpOptions {
     fn default() -> Self {
-        FtpOptions { encryption: FtpEncryption::None, passive: true, allow_invalid_certs: false, use_mlsd: true, max_connections: 4 }
+        FtpOptions {
+            encryption: FtpEncryption::None,
+            passive: true,
+            allow_invalid_certs: false,
+            use_mlsd: true,
+            max_connections: 4,
+        }
     }
 }
 

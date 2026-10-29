@@ -111,7 +111,8 @@ impl Vault {
 
     fn derive(password: &str, p: &MasterParams) -> Result<[u8; 32]> {
         let salt = B64.decode(&p.salt).map_err(|e| Error::other(e.to_string()))?;
-        let params = argon2::Params::new(p.m_cost, p.t_cost, p.p_cost, Some(32)).map_err(|e| Error::other(e.to_string()))?;
+        let params =
+            argon2::Params::new(p.m_cost, p.t_cost, p.p_cost, Some(32)).map_err(|e| Error::other(e.to_string()))?;
         let a = argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
         let mut out = [0u8; 32];
         a.hash_password_into(password.as_bytes(), &salt, &mut out).map_err(|e| Error::other(e.to_string()))?;
@@ -156,7 +157,13 @@ impl Vault {
             Some(pw) if !pw.is_empty() => {
                 let mut salt = [0u8; 16];
                 rand::thread_rng().fill_bytes(&mut salt);
-                let mut m = MasterParams { salt: B64.encode(salt), m_cost: 64 * 1024, t_cost: 3, p_cost: 1, check: String::new() };
+                let mut m = MasterParams {
+                    salt: B64.encode(salt),
+                    m_cost: 64 * 1024,
+                    t_cost: 3,
+                    p_cost: 1,
+                    check: String::new(),
+                };
                 new_key = Self::derive(pw, &m)?;
                 m.check = encrypt_with(&new_key, CHECK_PLAINTEXT)?;
                 new_master = Some(m);
@@ -200,9 +207,8 @@ pub fn encrypt_with(key: &[u8; 32], plain: &str) -> Result<String> {
     let cipher = XChaCha20Poly1305::new(key.into());
     let mut nonce = [0u8; 24];
     rand::thread_rng().fill_bytes(&mut nonce);
-    let ct = cipher
-        .encrypt(XNonce::from_slice(&nonce), plain.as_bytes())
-        .map_err(|_| Error::other("encryption failed"))?;
+    let ct =
+        cipher.encrypt(XNonce::from_slice(&nonce), plain.as_bytes()).map_err(|_| Error::other("encryption failed"))?;
     let mut blob = nonce.to_vec();
     blob.extend_from_slice(&ct);
     Ok(format!("{PREFIX}{}", B64.encode(blob)))

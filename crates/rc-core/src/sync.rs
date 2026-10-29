@@ -269,25 +269,55 @@ pub async fn compare(
                 match params.direction {
                     SyncDirection::LeftToRight => {
                         if left_newer || !time_diff || params.mode == SyncMode::Mirror {
-                            actions.push(mk(SyncActionKind::CopyLeftToRight, reason_for(left_newer), false, Some(le), Some(re)));
+                            actions.push(mk(
+                                SyncActionKind::CopyLeftToRight,
+                                reason_for(left_newer),
+                                false,
+                                Some(le),
+                                Some(re),
+                            ));
                         } else {
                             identical += 1;
                         }
                     }
                     SyncDirection::RightToLeft => {
                         if right_newer || !time_diff || params.mode == SyncMode::Mirror {
-                            actions.push(mk(SyncActionKind::CopyRightToLeft, reason_for(right_newer), false, Some(le), Some(re)));
+                            actions.push(mk(
+                                SyncActionKind::CopyRightToLeft,
+                                reason_for(right_newer),
+                                false,
+                                Some(le),
+                                Some(re),
+                            ));
                         } else {
                             identical += 1;
                         }
                     }
                     SyncDirection::Both => {
                         if left_newer {
-                            actions.push(mk(SyncActionKind::CopyLeftToRight, SyncReason::Newer, false, Some(le), Some(re)));
+                            actions.push(mk(
+                                SyncActionKind::CopyLeftToRight,
+                                SyncReason::Newer,
+                                false,
+                                Some(le),
+                                Some(re),
+                            ));
                         } else if right_newer {
-                            actions.push(mk(SyncActionKind::CopyRightToLeft, SyncReason::Newer, false, Some(le), Some(re)));
+                            actions.push(mk(
+                                SyncActionKind::CopyRightToLeft,
+                                SyncReason::Newer,
+                                false,
+                                Some(le),
+                                Some(re),
+                            ));
                         } else {
-                            actions.push(mk(SyncActionKind::Conflict, SyncReason::SizeDiffers, false, Some(le), Some(re)));
+                            actions.push(mk(
+                                SyncActionKind::Conflict,
+                                SyncReason::SizeDiffers,
+                                false,
+                                Some(le),
+                                Some(re),
+                            ));
                         }
                     }
                 }
@@ -371,7 +401,8 @@ impl JobTask for SyncTask {
             ctx.check().await?;
             let (src, dst) = if to_right { (&self.left, &self.right) } else { (&self.right, &self.left) };
             dst.vfs.mkdir_all(&dst_dir).await?;
-            let t = TransferTask { src: src.clone(), src_paths: paths, dst: dst.clone(), dst_dir, options: opts.clone() };
+            let t =
+                TransferTask { src: src.clone(), src_paths: paths, dst: dst.clone(), dst_dir, options: opts.clone() };
             t.run(ctx).await?;
         }
         if !delete_left.is_empty() {
@@ -446,7 +477,8 @@ mod tests {
             ..Default::default()
         };
         let plan = compare(vfs.as_ref(), vfs.as_ref(), &params, |_| {}).await.unwrap();
-        let mut summary: Vec<(String, SyncActionKind)> = plan.actions.iter().map(|a| (a.rel_path.clone(), a.action)).collect();
+        let mut summary: Vec<(String, SyncActionKind)> =
+            plan.actions.iter().map(|a| (a.rel_path.clone(), a.action)).collect();
         summary.sort_by(|a, b| a.0.cmp(&b.0));
         assert_eq!(
             summary,
@@ -464,7 +496,8 @@ mod tests {
 
         let q = JobQueue::new(1, Arc::new(|_| {}));
         let ep = Endpoint::new("local", vfs.clone());
-        let job = synchronize_all(&q, ep.clone(), ep.clone(), params.clone(), TransferOptions::default()).await.unwrap();
+        let job =
+            synchronize_all(&q, ep.clone(), ep.clone(), params.clone(), TransferOptions::default()).await.unwrap();
         assert_eq!(job.state, JobState::Completed, "{:?}", job.errors);
         let after = compare(vfs.as_ref(), vfs.as_ref(), &params, |_| {}).await.unwrap();
         assert!(after.actions.is_empty(), "{:?}", after.actions);

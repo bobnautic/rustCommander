@@ -56,12 +56,10 @@ pub async fn probe(host: &str, port: u16, tls: bool) -> Result<(InstanceInfo, Op
     let h = if host.contains(':') { format!("[{host}]") } else { host.to_string() };
     let url = format!("{}://{h}:{port}/api/info", if tls { "https" } else { "http" });
     let resp = client.get(&url).send().await.map_err(|e| Error::ConnectionLost(format!("{url}: {e}")))?;
-    let fingerprint = resp
-        .extensions()
-        .get::<reqwest::tls::TlsInfo>()
-        .and_then(|i| i.peer_certificate())
-        .map(cert_fingerprint);
-    let info: RemoteInfo = resp.json().await.map_err(|e| Error::protocol(format!("{url}: not a Rust Commander instance ({e})")))?;
+    let fingerprint =
+        resp.extensions().get::<reqwest::tls::TlsInfo>().and_then(|i| i.peer_certificate()).map(cert_fingerprint);
+    let info: RemoteInfo =
+        resp.json().await.map_err(|e| Error::protocol(format!("{url}: not a Rust Commander instance ({e})")))?;
     let mut instance = info.instance.ok_or_else(|| Error::protocol("not a Rust Commander instance"))?;
     if let Some(web) = instance.web.as_mut() {
         web.tls = tls;
@@ -160,7 +158,11 @@ pub async fn probe_manual_peers(state: &Arc<AppState>) {
                             version: p.version,
                             os: p.os,
                             user: p.user,
-                            web: p.web.map(|w| rc_discovery::WebInfo { port: w.port, tls: w.tls, fingerprint: w.fingerprint }),
+                            web: p.web.map(|w| rc_discovery::WebInfo {
+                                port: w.port,
+                                tls: w.tls,
+                                fingerprint: w.fingerprint,
+                            }),
                         };
                         d.upsert_manual(info, addr, false);
                     }

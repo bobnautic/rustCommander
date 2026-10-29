@@ -203,9 +203,10 @@ impl SiteStore {
         }
         for mut s in prepared {
             if let Some(j) = s.ssh.jump_site_id.take() {
-                s.ssh.jump_site_id = name_to_id.get(&j).cloned().or_else(|| {
-                    self.sites.read().iter().find(|x| x.name == j || x.id == j).map(|x| x.id.clone())
-                });
+                s.ssh.jump_site_id = name_to_id
+                    .get(&j)
+                    .cloned()
+                    .or_else(|| self.sites.read().iter().find(|x| x.name == j || x.id == j).map(|x| x.id.clone()));
             }
             let p = self.prepare(s, None)?;
             out.push(Self::masked(p.clone()));
@@ -259,7 +260,8 @@ mod tests {
     #[test]
     fn secrets_are_masked_and_kept() {
         let store = SiteStore::in_memory(Arc::new(Vault::ephemeral()));
-        let mut s = SiteConfig { host: "h".into(), username: "u".into(), password: Some("pw".into()), ..Default::default() };
+        let mut s =
+            SiteConfig { host: "h".into(), username: "u".into(), password: Some("pw".into()), ..Default::default() };
         let saved = store.save(s.clone()).unwrap();
         assert_eq!(saved.password.as_deref(), Some(SECRET_PLACEHOLDER));
         assert!(!saved.id.is_empty());

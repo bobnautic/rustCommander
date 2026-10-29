@@ -60,12 +60,7 @@ pub enum PromptRequest {
     /// Passphrase for an encrypted private key. Answer: `values[0]`.
     Passphrase { key_path: String },
     /// SSH keyboard-interactive round. Answer: one value per prompt.
-    KeyboardInteractive {
-        host: String,
-        name: String,
-        instructions: String,
-        prompts: Vec<KbdPrompt>,
-    },
+    KeyboardInteractive { host: String, name: String, instructions: String, prompts: Vec<KbdPrompt> },
     /// Display the server's authentication banner; answer just acknowledges.
     Banner { host: String, message: String },
     /// Generic yes/no question.

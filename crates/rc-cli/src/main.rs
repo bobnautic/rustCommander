@@ -96,7 +96,19 @@ async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Serve { bind, port, no_tls, password, no_auth, name, no_discovery, discovery_port, no_terminal } => {
             rc_api::logs::init_tracing("info,rustls=warn,hyper=warn");
-            serve(cli.config_dir, bind, port, !no_tls, password, no_auth, name, !no_discovery, discovery_port, !no_terminal).await
+            serve(
+                cli.config_dir,
+                bind,
+                port,
+                !no_tls,
+                password,
+                no_auth,
+                name,
+                !no_discovery,
+                discovery_port,
+                !no_terminal,
+            )
+            .await
         }
         Command::SetPassword { password } => {
             let pw = match password {
@@ -117,7 +129,9 @@ async fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
         Command::Discover { timeout, port, json } => {
-            let peers = rc_discovery::scan(port, Duration::from_secs(timeout)).await.context("cannot listen for announcements")?;
+            let peers = rc_discovery::scan(port, Duration::from_secs(timeout))
+                .await
+                .context("cannot listen for announcements")?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&peers)?);
                 return Ok(());
@@ -129,7 +143,14 @@ async fn run(cli: Cli) -> Result<()> {
             println!("{:<24} {:<20} {:<10} {:<9} WEB UI", "NAME", "HOST", "OS", "VERSION");
             for p in peers {
                 let web = p.web.map(|w| w.url).unwrap_or_else(|| "-".into());
-                println!("{:<24} {:<20} {:<10} {:<9} {}", p.name, p.addresses.first().cloned().unwrap_or_default(), p.os, p.version, web);
+                println!(
+                    "{:<24} {:<20} {:<10} {:<9} {}",
+                    p.name,
+                    p.addresses.first().cloned().unwrap_or_default(),
+                    p.os,
+                    p.version,
+                    web
+                );
             }
             Ok(())
         }

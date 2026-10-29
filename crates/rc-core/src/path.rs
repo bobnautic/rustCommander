@@ -34,11 +34,8 @@ pub fn is_drive_path(p: &str) -> bool {
 /// Normalize separators, collapse `//`, resolve `.` and `..` lexically.
 pub fn normalize(p: &str) -> String {
     let p = p.replace('\\', "/");
-    let (prefix, rest) = if is_drive_path(&p) {
-        (p[..2].to_ascii_uppercase(), &p[2..])
-    } else {
-        (String::new(), p.as_str())
-    };
+    let (prefix, rest) =
+        if is_drive_path(&p) { (p[..2].to_ascii_uppercase(), &p[2..]) } else { (String::new(), p.as_str()) };
     let absolute = rest.starts_with('/') || !prefix.is_empty();
     let mut parts: Vec<&str> = Vec::new();
     for seg in rest.split('/') {

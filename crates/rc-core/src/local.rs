@@ -92,7 +92,8 @@ fn entry_from_metadata(name: String, vpath_str: String, meta: &std::fs::Metadata
         if meta.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0 {
             e.hidden = true;
         }
-        e.permissions = Some(if meta.permissions().readonly() { 0o444 } else { 0o666 } | if ft.is_dir() { 0o111 } else { 0 });
+        e.permissions =
+            Some(if meta.permissions().readonly() { 0o444 } else { 0o666 } | if ft.is_dir() { 0o111 } else { 0 });
     }
     e
 }
@@ -227,9 +228,8 @@ impl Vfs for LocalVfs {
     }
 
     async fn home(&self) -> Result<String> {
-        let home = directories::UserDirs::new()
-            .map(|d| d.home_dir().to_path_buf())
-            .unwrap_or_else(|| PathBuf::from("/"));
+        let home =
+            directories::UserDirs::new().map(|d| d.home_dir().to_path_buf()).unwrap_or_else(|| PathBuf::from("/"));
         Ok(from_native(&home))
     }
 
@@ -358,8 +358,10 @@ impl Vfs for LocalVfs {
             };
             let native = to_native(path);
             let p = path.to_string();
-            tokio::task::spawn_blocking(move || std::os::unix::fs::lchown(&native, uid, gid).map_err(|e| Error::io_at(e, &p)))
-                .await?
+            tokio::task::spawn_blocking(move || {
+                std::os::unix::fs::lchown(&native, uid, gid).map_err(|e| Error::io_at(e, &p))
+            })
+            .await?
         }
         #[cfg(not(unix))]
         {

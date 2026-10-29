@@ -77,7 +77,9 @@ impl Visit for Visitor {
 impl<S: Subscriber> Layer<S> for UiLogLayer {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let meta = event.metadata();
-        let ours = meta.target().starts_with("rc_") || meta.target().starts_with("rust_commander") || meta.target().starts_with("rcmd");
+        let ours = meta.target().starts_with("rc_")
+            || meta.target().starts_with("rust_commander")
+            || meta.target().starts_with("rcmd");
         let level = *meta.level();
         if !(ours && level <= Level::INFO || level <= Level::WARN) {
             return;

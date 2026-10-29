@@ -146,7 +146,8 @@ impl JobTask for TransferTask {
                 }
                 // Copy onto itself: duplicate with a numbered name.
                 let unique = ops::unique_name(self.dst.vfs.as_ref(), &self.dst_dir, &name).await?;
-                let item = Item { src: entry.clone(), dst_path: vpath::join(&self.dst_dir, &unique), is_dir: entry.is_dir() };
+                let item =
+                    Item { src: entry.clone(), dst_path: vpath::join(&self.dst_dir, &unique), is_dir: entry.is_dir() };
                 self.collect(ctx, item, &mask, &mut dirs, &mut files).await?;
                 continue;
             }
@@ -211,7 +212,14 @@ impl JobTask for TransferTask {
 }
 
 impl TransferTask {
-    async fn collect(&self, ctx: &JobCtx, root: Item, mask: &FileMask, dirs: &mut Vec<Item>, files: &mut Vec<Item>) -> Result<()> {
+    async fn collect(
+        &self,
+        ctx: &JobCtx,
+        root: Item,
+        mask: &FileMask,
+        dirs: &mut Vec<Item>,
+        files: &mut Vec<Item>,
+    ) -> Result<()> {
         if !root.is_dir {
             ctx.add_total(root.src.size, 1);
             files.push(root);
@@ -434,7 +442,11 @@ impl TransferTask {
             }
         }
         if caps_dst.permissions {
-            let mode = opts.permissions.or(if opts.preserve_permissions && caps_src.permissions { src.permissions } else { None });
+            let mode = opts.permissions.or(if opts.preserve_permissions && caps_src.permissions {
+                src.permissions
+            } else {
+                None
+            });
             if let Some(m) = mode {
                 if let Err(e) = self.dst.vfs.set_permissions(&dst_path, m).await {
                     tracing::debug!("chmod {dst_path}: {e}");
@@ -660,7 +672,11 @@ mod tests {
             src_paths: vec![vpath::join(&base, "src")],
             dst: ep.clone(),
             dst_dir: vpath::join(&base, "dst"),
-            options: TransferOptions { overwrite: OverwriteMode::Overwrite, file_mask: "| *.log".into(), ..Default::default() },
+            options: TransferOptions {
+                overwrite: OverwriteMode::Overwrite,
+                file_mask: "| *.log".into(),
+                ..Default::default()
+            },
         };
         let job = q.submit(JobKind::Transfer, JobSpec::default(), Arc::new(task), 0);
         let done = q.wait(&job.id).await.unwrap();
@@ -684,7 +700,13 @@ mod tests {
         loop {
             let j = q.get(&job.id).unwrap();
             if let Some(c) = &j.conflict {
-                q.resolve_conflict(&job.id, &c.id, ConflictDecision { action: ConflictAction::Skip, new_name: None }, true).unwrap();
+                q.resolve_conflict(
+                    &job.id,
+                    &c.id,
+                    ConflictDecision { action: ConflictAction::Skip, new_name: None },
+                    true,
+                )
+                .unwrap();
                 answered = true;
             }
             if j.state.is_finished() {

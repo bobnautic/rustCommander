@@ -49,8 +49,20 @@ pub fn start_transfer(state: &AppState, p: TransferParams) -> Result<Job> {
         format!("{} items", p.src_paths.len())
     };
     let direction = match (p.src_session == LOCAL_SESSION, p.dst_session == LOCAL_SESSION) {
-        (true, false) => if options.move_files { "Upload (move)" } else { "Upload" },
-        (false, true) => if options.move_files { "Download (move)" } else { "Download" },
+        (true, false) => {
+            if options.move_files {
+                "Upload (move)"
+            } else {
+                "Upload"
+            }
+        }
+        (false, true) => {
+            if options.move_files {
+                "Download (move)"
+            } else {
+                "Download"
+            }
+        }
         _ => verb,
     };
     let spec = JobSpec {
@@ -77,7 +89,12 @@ pub struct ResolveParams {
 }
 
 pub fn resolve_conflict(state: &AppState, p: ResolveParams) -> Result<()> {
-    state.jobs.resolve_conflict(&p.id, &p.conflict_id, ConflictDecision { action: p.action, new_name: p.new_name }, p.apply_to_all)
+    state.jobs.resolve_conflict(
+        &p.id,
+        &p.conflict_id,
+        ConflictDecision { action: p.action, new_name: p.new_name },
+        p.apply_to_all,
+    )
 }
 
 // ------------------------------------------------------------------ archives
@@ -101,7 +118,9 @@ pub struct CreateArchiveParams {
 
 fn require_local(state: &AppState, session: &str) -> Result<()> {
     if state.vfs(session)?.protocol() != Protocol::Local {
-        return Err(Error::unsupported("archives can only be handled in the local panel (use a custom command such as tar on servers)"));
+        return Err(Error::unsupported(
+            "archives can only be handled in the local panel (use a custom command such as tar on servers)",
+        ));
     }
     Ok(())
 }
@@ -114,7 +133,12 @@ pub fn archive_extract(state: &AppState, p: ExtractParams) -> Result<Job> {
         dst_dir: Some(p.dst_dir.clone()),
         ..Default::default()
     };
-    Ok(state.jobs.submit(JobKind::Transfer, spec, Arc::new(ArchiveTask::Extract { path: p.path, dst_dir: p.dst_dir }), 0))
+    Ok(state.jobs.submit(
+        JobKind::Transfer,
+        spec,
+        Arc::new(ArchiveTask::Extract { path: p.path, dst_dir: p.dst_dir }),
+        0,
+    ))
 }
 
 pub fn archive_create(state: &AppState, p: CreateArchiveParams) -> Result<Job> {
@@ -125,7 +149,12 @@ pub fn archive_create(state: &AppState, p: CreateArchiveParams) -> Result<Job> {
         dst_dir: Some(vpath::parent(&p.dst)),
         ..Default::default()
     };
-    Ok(state.jobs.submit(JobKind::Transfer, spec, Arc::new(ArchiveTask::Create { paths: p.paths, dst: p.dst, format: p.format }), 0))
+    Ok(state.jobs.submit(
+        JobKind::Transfer,
+        spec,
+        Arc::new(ArchiveTask::Create { paths: p.paths, dst: p.dst, format: p.format }),
+        0,
+    ))
 }
 
 // ------------------------------------------------------------------ sync
@@ -160,7 +189,11 @@ pub struct SyncExecuteParams {
 }
 
 pub fn sync_execute(state: &AppState, p: SyncExecuteParams) -> Result<Job> {
-    let plan = state.sync_plans.lock().remove(&p.plan_id).ok_or_else(|| Error::NotFound("synchronization plan (compare again)".into()))?;
+    let plan = state
+        .sync_plans
+        .lock()
+        .remove(&p.plan_id)
+        .ok_or_else(|| Error::NotFound("synchronization plan (compare again)".into()))?;
     let wanted: std::collections::HashSet<&String> = p.action_ids.iter().collect();
     let actions: Vec<_> = plan.actions.into_iter().filter(|a| wanted.contains(&a.id)).collect();
     let params = plan.params;
@@ -219,7 +252,13 @@ pub async fn watch_start(state: &Arc<AppState>, p: WatchStartParams) -> Result<W
                 src_paths: vec![],
                 dst_dir: Some(p.remote_path.clone()),
             };
-            let task = SyncTask { left: local.clone(), right: remote.clone(), params, actions: plan.actions, options: options.clone() };
+            let task = SyncTask {
+                left: local.clone(),
+                right: remote.clone(),
+                params,
+                actions: plan.actions,
+                options: options.clone(),
+            };
             state.jobs.submit(JobKind::Sync, spec, Arc::new(task), options.speed_limit);
         }
     }
@@ -260,8 +299,12 @@ pub fn search_start(state: &Arc<AppState>, params: SearchParams) -> Result<Strin
         .await;
         st.searches.lock().remove(&sid);
         let payload = match r {
-            Ok(s) => serde_json::json!({ "id": sid, "scanned": s.scanned, "found": s.found, "cancelled": s.cancelled, "error": null }),
-            Err(e) => serde_json::json!({ "id": sid, "scanned": 0, "found": 0, "cancelled": false, "error": e.to_string() }),
+            Ok(s) => {
+                serde_json::json!({ "id": sid, "scanned": s.scanned, "found": s.found, "cancelled": s.cancelled, "error": null })
+            }
+            Err(e) => {
+                serde_json::json!({ "id": sid, "scanned": 0, "found": 0, "cancelled": false, "error": e.to_string() })
+            }
         };
         st.events.emit("search.done", payload);
     });

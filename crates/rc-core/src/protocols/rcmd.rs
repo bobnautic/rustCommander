@@ -80,7 +80,10 @@ impl ServerCertVerifier for PinnedVerifier {
     }
 }
 
-fn client(pinned: Option<String>, timeout: Duration) -> Result<(reqwest::Client, Arc<PinnedVerifier>, Arc<rustls::ClientConfig>)> {
+fn client(
+    pinned: Option<String>,
+    timeout: Duration,
+) -> Result<(reqwest::Client, Arc<PinnedVerifier>, Arc<rustls::ClientConfig>)> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let verifier = Arc::new(PinnedVerifier { pinned, seen: Mutex::new(None), provider: provider.clone() });
     let config = rustls::ClientConfig::builder_with_provider(provider)
@@ -137,7 +140,13 @@ fn net_err(e: reqwest::Error) -> Error {
     }
 }
 
-async fn rpc_call<T: DeserializeOwned>(client: &reqwest::Client, base: &str, token: &str, method: &str, params: Value) -> Result<T> {
+async fn rpc_call<T: DeserializeOwned>(
+    client: &reqwest::Client,
+    base: &str,
+    token: &str,
+    method: &str,
+    params: Value,
+) -> Result<T> {
     let resp = client
         .post(format!("{base}/api/rpc"))
         .bearer_auth(token)
@@ -180,7 +189,9 @@ pub async fn connect(site: &SiteConfig, ctx: &ConnectContext) -> Result<Arc<dyn 
             HostKeyStatus::Trusted => {}
             status => {
                 let (state, reason) = match &status {
-                    HostKeyStatus::Mismatch { .. } => (HostKeyState::Changed, "the certificate changed since the last connection"),
+                    HostKeyStatus::Mismatch { .. } => {
+                        (HostKeyState::Changed, "the certificate changed since the last connection")
+                    }
                     _ => (HostKeyState::New, "self-signed certificate of a Rust Commander instance"),
                 };
                 let req = PromptRequest::Certificate {
@@ -192,7 +203,12 @@ pub async fn connect(site: &SiteConfig, ctx: &ConnectContext) -> Result<Arc<dyn 
                     reason: reason.into(),
                     state,
                 };
-                let resp = ctx.prompter.prompt(req).await.filter(|r| r.accepted).ok_or_else(|| Error::HostKeyRejected(format!("certificate of {}", site.host)))?;
+                let resp = ctx
+                    .prompter
+                    .prompt(req)
+                    .await
+                    .filter(|r| r.accepted)
+                    .ok_or_else(|| Error::HostKeyRejected(format!("certificate of {}", site.host)))?;
                 if resp.remember {
                     ctx.known_hosts.add(&key, "x509", &seen, "")?;
                 }
@@ -206,13 +222,18 @@ pub async fn connect(site: &SiteConfig, ctx: &ConnectContext) -> Result<Arc<dyn 
     let password = match &site.password {
         Some(p) => p.clone(),
         None => {
-            let info: Value = client.get(format!("{base}/api/info")).send().await.map_err(net_err)?.json().await.map_err(net_err)?;
+            let info: Value =
+                client.get(format!("{base}/api/info")).send().await.map_err(net_err)?.json().await.map_err(net_err)?;
             if info["authRequired"].as_bool() == Some(false) {
                 String::new()
             } else {
                 let r = ctx
                     .prompter
-                    .prompt(PromptRequest::Password { host: site.host.clone(), username: "Rust Commander".into(), message: String::new() })
+                    .prompt(PromptRequest::Password {
+                        host: site.host.clone(),
+                        username: "Rust Commander".into(),
+                        message: String::new(),
+                    })
                     .await
                     .filter(|r| r.accepted)
                     .ok_or(Error::Cancelled)?;
@@ -220,7 +241,12 @@ pub async fn connect(site: &SiteConfig, ctx: &ConnectContext) -> Result<Arc<dyn 
             }
         }
     };
-    let resp = client.post(format!("{base}/api/login")).json(&json!({ "password": password })).send().await.map_err(net_err)?;
+    let resp = client
+        .post(format!("{base}/api/login"))
+        .json(&json!({ "password": password }))
+        .send()
+        .await
+        .map_err(net_err)?;
     let status = resp.status();
     let body: Value = resp.json().await.unwrap_or(Value::Null);
     let token = if status.is_success() {
@@ -251,7 +277,10 @@ pub async fn connect(site: &SiteConfig, ctx: &ConnectContext) -> Result<Arc<dyn 
     vfs.info.push("Endpoint", base);
     vfs.info.push("Instance", app["instanceName"].as_str().unwrap_or(""));
     vfs.info.push("Version", app["version"].as_str().unwrap_or(""));
-    vfs.info.push("Operating system", format!("{} ({})", app["os"].as_str().unwrap_or(""), app["arch"].as_str().unwrap_or("")));
+    vfs.info.push(
+        "Operating system",
+        format!("{} ({})", app["os"].as_str().unwrap_or(""), app["arch"].as_str().unwrap_or("")),
+    );
     tracing::info!(session = %ctx.session_id, "logged in to Rust Commander peer {}", vfs.host);
     Ok(Arc::new(vfs))
 }
@@ -301,11 +330,15 @@ impl Vfs for RcmdVfs {
     }
 
     async fn mkdir(&self, path: &str) -> Result<()> {
-        self.call::<Value>("fs.mkdir", json!({ "session": PEER_SESSION, "path": path, "parents": false })).await.map(|_| ())
+        self.call::<Value>("fs.mkdir", json!({ "session": PEER_SESSION, "path": path, "parents": false }))
+            .await
+            .map(|_| ())
     }
 
     async fn mkdir_all(&self, path: &str) -> Result<()> {
-        self.call::<Value>("fs.mkdir", json!({ "session": PEER_SESSION, "path": path, "parents": true })).await.map(|_| ())
+        self.call::<Value>("fs.mkdir", json!({ "session": PEER_SESSION, "path": path, "parents": true }))
+            .await
+            .map(|_| ())
     }
 
     async fn remove_file(&self, path: &str) -> Result<()> {
@@ -317,7 +350,9 @@ impl Vfs for RcmdVfs {
     }
 
     async fn remove_dir_all(&self, path: &str) -> Result<()> {
-        self.call::<Value>("fs.remove", json!({ "session": PEER_SESSION, "path": path, "recursive": true })).await.map(|_| ())
+        self.call::<Value>("fs.remove", json!({ "session": PEER_SESSION, "path": path, "recursive": true }))
+            .await
+            .map(|_| ())
     }
 
     async fn rename(&self, from: &str, to: &str) -> Result<()> {
@@ -325,21 +360,30 @@ impl Vfs for RcmdVfs {
     }
 
     async fn set_permissions(&self, path: &str, mode: u32) -> Result<()> {
-        self.call::<Value>("fs.setAttributes", json!({ "session": PEER_SESSION, "paths": [path], "permissions": mode })).await.map(|_| ())
-    }
-
-    async fn set_owner(&self, path: &str, owner: Option<&str>, group: Option<&str>) -> Result<()> {
-        self.call::<Value>("fs.setAttributes", json!({ "session": PEER_SESSION, "paths": [path], "owner": owner, "group": group }))
+        self.call::<Value>("fs.setAttributes", json!({ "session": PEER_SESSION, "paths": [path], "permissions": mode }))
             .await
             .map(|_| ())
     }
 
+    async fn set_owner(&self, path: &str, owner: Option<&str>, group: Option<&str>) -> Result<()> {
+        self.call::<Value>(
+            "fs.setAttributes",
+            json!({ "session": PEER_SESSION, "paths": [path], "owner": owner, "group": group }),
+        )
+        .await
+        .map(|_| ())
+    }
+
     async fn set_modified(&self, path: &str, mtime: i64) -> Result<()> {
-        self.call::<Value>("fs.setAttributes", json!({ "session": PEER_SESSION, "paths": [path], "modified": mtime })).await.map(|_| ())
+        self.call::<Value>("fs.setAttributes", json!({ "session": PEER_SESSION, "paths": [path], "modified": mtime }))
+            .await
+            .map(|_| ())
     }
 
     async fn symlink(&self, target: &str, link: &str) -> Result<()> {
-        self.call::<Value>("fs.symlink", json!({ "session": PEER_SESSION, "target": target, "link": link })).await.map(|_| ())
+        self.call::<Value>("fs.symlink", json!({ "session": PEER_SESSION, "target": target, "link": link }))
+            .await
+            .map(|_| ())
     }
 
     async fn read_link(&self, path: &str) -> Result<String> {
@@ -414,7 +458,10 @@ impl Vfs for RcmdVfs {
             .await
             .map_err(|e| Error::ConnectionLost(format!("event stream: {e}")))?;
         let info: Value = self
-            .call("terminal.open", json!({ "session": PEER_SESSION, "cols": opts.cols, "rows": opts.rows, "cwd": opts.cwd }))
+            .call(
+                "terminal.open",
+                json!({ "session": PEER_SESSION, "cols": opts.cols, "rows": opts.rows, "cwd": opts.cwd }),
+            )
             .await?;
         let id = info["id"].as_str().unwrap_or_default().to_string();
         let (in_tx, mut in_rx) = mpsc::unbounded_channel::<TerminalInput>();
@@ -426,10 +473,18 @@ impl Vfs for RcmdVfs {
                 let r = match input {
                     TerminalInput::Data(d) => {
                         let data = String::from_utf8_lossy(&d).into_owned();
-                        rpc_call::<Value>(&client, &base, &token, "terminal.write", json!({ "id": tid, "data": data })).await
+                        rpc_call::<Value>(&client, &base, &token, "terminal.write", json!({ "id": tid, "data": data }))
+                            .await
                     }
                     TerminalInput::Resize { cols, rows } => {
-                        rpc_call::<Value>(&client, &base, &token, "terminal.resize", json!({ "id": tid, "cols": cols, "rows": rows })).await
+                        rpc_call::<Value>(
+                            &client,
+                            &base,
+                            &token,
+                            "terminal.resize",
+                            json!({ "id": tid, "cols": cols, "rows": rows }),
+                        )
+                        .await
                     }
                     TerminalInput::Close => break,
                 };
@@ -476,7 +531,9 @@ impl Vfs for RcmdVfs {
     }
 
     async fn checksum(&self, path: &str, algo: ChecksumAlgo) -> Result<Option<String>> {
-        self.call::<String>("fs.checksum", json!({ "session": PEER_SESSION, "path": path, "algo": algo })).await.map(Some)
+        self.call::<String>("fs.checksum", json!({ "session": PEER_SESSION, "path": path, "algo": algo }))
+            .await
+            .map(Some)
     }
 
     async fn disk_info(&self, path: &str) -> Result<Option<DiskInfo>> {

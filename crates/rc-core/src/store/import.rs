@@ -25,7 +25,9 @@ pub fn from_openssh_config(content: &str) -> Vec<SiteConfig> {
             continue;
         }
         let (key, value) = match line.split_once(|c: char| c.is_whitespace() || c == '=') {
-            Some((k, v)) => (k.trim().to_ascii_lowercase(), v.trim().trim_start_matches('=').trim().trim_matches('"').to_string()),
+            Some((k, v)) => {
+                (k.trim().to_ascii_lowercase(), v.trim().trim_start_matches('=').trim().trim_matches('"').to_string())
+            }
             None => continue,
         };
         match key.as_str() {
@@ -109,10 +111,7 @@ fn url_decode(s: &str) -> String {
 fn winscp_decrypt_password(hex: &str, key: &str) -> Option<String> {
     const MAGIC: u8 = 0xA3;
     const FLAG: u8 = 0xFF;
-    let digits: Vec<u8> = hex
-        .chars()
-        .map(|c| c.to_digit(16).map(|d| d as u8))
-        .collect::<Option<Vec<u8>>>()?;
+    let digits: Vec<u8> = hex.chars().map(|c| c.to_digit(16).map(|d| d as u8)).collect::<Option<Vec<u8>>>()?;
     let mut pos = 0;
     let mut next = || -> Option<u8> {
         if pos + 1 >= digits.len() {
@@ -228,12 +227,17 @@ pub fn from_filezilla_xml(content: &str) -> Result<Vec<SiteConfig>> {
     fn walk(node: roxmltree::Node, folder: &str, out: &mut Vec<SiteConfig>) {
         for child in node.children().filter(|c| c.is_element()) {
             if child.has_tag_name("Folder") {
-                let name = child.children().find(|c| c.is_text()).and_then(|t| t.text()).unwrap_or("").trim().to_string();
+                let name =
+                    child.children().find(|c| c.is_text()).and_then(|t| t.text()).unwrap_or("").trim().to_string();
                 let sub = if folder.is_empty() { name } else { format!("{folder}/{name}") };
                 walk(child, &sub, out);
             } else if child.has_tag_name("Server") {
                 let mut s = SiteConfig {
-                    folder: if folder.is_empty() { "Imported/FileZilla".into() } else { format!("Imported/FileZilla/{folder}") },
+                    folder: if folder.is_empty() {
+                        "Imported/FileZilla".into()
+                    } else {
+                        format!("Imported/FileZilla/{folder}")
+                    },
                     ..Default::default()
                 };
                 s.host = text(child, "Host").unwrap_or_default();

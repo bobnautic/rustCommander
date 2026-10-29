@@ -93,7 +93,8 @@ fn error(status: StatusCode, code: &str, message: impl Into<String>) -> Response
 }
 
 fn rpc_error(e: RpcError) -> Response {
-    let status = StatusCode::from_u16(rc_api::dispatch::http_status(&e.code)).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let status =
+        StatusCode::from_u16(rc_api::dispatch::http_status(&e.code)).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     error(status, &e.code, e.message)
 }
 
@@ -115,7 +116,8 @@ async fn require_auth(State(ctx): State<Ctx>, req: Request, next: Next) -> Respo
 
 async fn info(State(ctx): State<Ctx>, headers: HeaderMap) -> Response {
     let (token, _) = token_from(&headers);
-    let authenticated = ctx.state.server_auth.is_disabled() || token.as_deref().is_some_and(|t| ctx.state.server_auth.check_token(t));
+    let authenticated =
+        ctx.state.server_auth.is_disabled() || token.as_deref().is_some_and(|t| ctx.state.server_auth.check_token(t));
     Json(json!({
         "name": ctx.state.instance_name(),
         "version": rc_core::VERSION,
@@ -131,7 +133,11 @@ struct LoginBody {
     password: String,
 }
 
-async fn login(State(ctx): State<Ctx>, ConnectInfo(addr): ConnectInfo<SocketAddr>, Json(body): Json<LoginBody>) -> Response {
+async fn login(
+    State(ctx): State<Ctx>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<LoginBody>,
+) -> Response {
     let ip = addr.ip();
     {
         let mut f = ctx.failures.lock();
@@ -171,8 +177,10 @@ async fn logout(State(ctx): State<Ctx>, headers: HeaderMap) -> Response {
         ctx.state.server_auth.revoke(&t);
     }
     let mut res = Json(json!({})).into_response();
-    res.headers_mut()
-        .insert(header::SET_COOKIE, HeaderValue::from_static("rc_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"));
+    res.headers_mut().insert(
+        header::SET_COOKIE,
+        HeaderValue::from_static("rc_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"),
+    );
     res
 }
 
@@ -183,7 +191,11 @@ struct RpcBody {
     params: serde_json::Value,
 }
 
-async fn rpc(State(ctx): State<Ctx>, ConnectInfo(addr): ConnectInfo<SocketAddr>, Json(body): Json<RpcBody>) -> Response {
+async fn rpc(
+    State(ctx): State<Ctx>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<RpcBody>,
+) -> Response {
     let origin = Origin::Web { remote: Some(addr.to_string()) };
     match dispatch(&ctx.state, &origin, &body.method, body.params).await {
         Ok(result) => Json(json!({ "result": result })).into_response(),
@@ -231,7 +243,8 @@ async fn event_loop(ctx: Ctx, socket: WebSocket) {
 }
 
 fn content_disposition(name: &str, inline: bool) -> String {
-    let ascii: String = name.chars().map(|c| if c.is_ascii_alphanumeric() || "._- ()".contains(c) { c } else { '_' }).collect();
+    let ascii: String =
+        name.chars().map(|c| if c.is_ascii_alphanumeric() || "._- ()".contains(c) { c } else { '_' }).collect();
     let encoded = percent_encoding::utf8_percent_encode(name, percent_encoding::NON_ALPHANUMERIC).to_string();
     format!("{}; filename=\"{ascii}\"; filename*=UTF-8''{encoded}", if inline { "inline" } else { "attachment" })
 }
@@ -259,7 +272,12 @@ async fn download(State(ctx): State<Ctx>, Query(q): Query<Vec<(String, String)>>
     zip_download(ctx, vfs, paths).await
 }
 
-async fn stream_file(vfs: Arc<dyn rc_core::Vfs>, entry: rc_core::FileEntry, headers: &HeaderMap, inline: bool) -> Response {
+async fn stream_file(
+    vfs: Arc<dyn rc_core::Vfs>,
+    entry: rc_core::FileEntry,
+    headers: &HeaderMap,
+    inline: bool,
+) -> Response {
     // Only "bytes=N-" ranges (resume) are supported.
     let mut offset = 0u64;
     if let Some(r) = headers.get(header::RANGE).and_then(|v| v.to_str().ok()) {
@@ -296,7 +314,10 @@ async fn stream_file(vfs: Arc<dyn rc_core::Vfs>, entry: rc_core::FileEntry, head
     let mut res = Response::new(body);
     let h = res.headers_mut();
     let mime = mime_guess::from_path(&entry.name).first_or_octet_stream();
-    h.insert(header::CONTENT_TYPE, HeaderValue::from_str(mime.as_ref()).unwrap_or(HeaderValue::from_static("application/octet-stream")));
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_str(mime.as_ref()).unwrap_or(HeaderValue::from_static("application/octet-stream")),
+    );
     h.insert(header::CONTENT_LENGTH, HeaderValue::from(entry.size - offset));
     h.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
     if let Ok(v) = HeaderValue::from_str(&content_disposition(&entry.name, inline)) {
@@ -304,14 +325,17 @@ async fn stream_file(vfs: Arc<dyn rc_core::Vfs>, entry: rc_core::FileEntry, head
     }
     if offset > 0 {
         *res.status_mut() = StatusCode::PARTIAL_CONTENT;
-        if let Ok(v) = HeaderValue::from_str(&format!("bytes {offset}-{}/{}", entry.size.saturating_sub(1), entry.size)) {
+        if let Ok(v) = HeaderValue::from_str(&format!("bytes {offset}-{}/{}", entry.size.saturating_sub(1), entry.size))
+        {
             res.headers_mut().insert(header::CONTENT_RANGE, v);
         }
     }
     res
 }
 
-fn tokio_stream_from<T: Send + 'static>(mut rx: tokio::sync::mpsc::Receiver<T>) -> impl futures::Stream<Item = T> + Send {
+fn tokio_stream_from<T: Send + 'static>(
+    mut rx: tokio::sync::mpsc::Receiver<T>,
+) -> impl futures::Stream<Item = T> + Send {
     futures::stream::poll_fn(move |cx| rx.poll_recv(cx))
 }
 
@@ -355,7 +379,8 @@ async fn zip_download(ctx: Ctx, vfs: Arc<dyn rc_core::Vfs>, paths: Vec<String>) 
                     .map(|d| ZipDateTime::from_chrono(&d))
                     .unwrap_or_default();
                 if e.kind == FileKind::Dir {
-                    let b = ZipEntryBuilder::new(format!("{rel}/").into(), Compression::Stored).last_modification_date(date);
+                    let b = ZipEntryBuilder::new(format!("{rel}/").into(), Compression::Stored)
+                        .last_modification_date(date);
                     if zip.write_entry_whole(b, &[]).await.is_err() {
                         return;
                     }
@@ -455,10 +480,19 @@ async fn static_file(req: Request) -> Response {
         },
     };
     let mime = mime_guess::from_path(&name).first_or_octet_stream();
-    let cache = if name == "index.html" { "no-cache" } else if name.starts_with("assets/") { "public, max-age=31536000, immutable" } else { "public, max-age=3600" };
+    let cache = if name == "index.html" {
+        "no-cache"
+    } else if name.starts_with("assets/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "public, max-age=3600"
+    };
     let mut res = Response::new(Body::from(file.data.into_owned()));
     let h = res.headers_mut();
-    h.insert(header::CONTENT_TYPE, HeaderValue::from_str(mime.as_ref()).unwrap_or(HeaderValue::from_static("application/octet-stream")));
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_str(mime.as_ref()).unwrap_or(HeaderValue::from_static("application/octet-stream")),
+    );
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
     res
 }

@@ -37,7 +37,8 @@ fn merge_stored_secrets(state: &AppState, mut site: SiteConfig) -> Result<SiteCo
         None
     };
     if uses_placeholder {
-        let s = stored.clone().ok_or_else(|| Error::InvalidInput("saved secrets referenced for an unknown site".into()))?;
+        let s =
+            stored.clone().ok_or_else(|| Error::InvalidInput("saved secrets referenced for an unknown site".into()))?;
         let pick = |v: &mut Option<String>, src: &Option<String>| {
             if v.as_deref() == Some(SECRET_PLACEHOLDER) {
                 *v = src.clone();
@@ -67,7 +68,9 @@ pub async fn open(state: &Arc<AppState>, p: OpenParams) -> Result<SessionSummary
     } else if let Some(url) = p.url.as_deref() {
         let url = url.trim();
         let url = if url.contains("://") { url.to_string() } else { format!("sftp://{url}") };
-        SiteConfig::from_url(&url).map(|(s, _)| s).ok_or_else(|| Error::InvalidInput(format!("cannot parse URL {url}")))?
+        SiteConfig::from_url(&url)
+            .map(|(s, _)| s)
+            .ok_or_else(|| Error::InvalidInput(format!("cannot parse URL {url}")))?
     } else {
         return Err(Error::InvalidInput("siteId, site or url required".into()));
     };
@@ -142,7 +145,8 @@ pub async fn close(state: &AppState, id: &str) -> Result<()> {
     let s = state.sessions.write().remove(id).ok_or_else(|| Error::NotFound(format!("session {id}")))?;
     // Stop things bound to the session.
     state.tunnels.lock().retain(|_, t| t.status().session != id);
-    let terms: Vec<String> = state.terminals.lock().values().filter(|t| t.session == id).map(|t| t.id.clone()).collect();
+    let terms: Vec<String> =
+        state.terminals.lock().values().filter(|t| t.session == id).map(|t| t.id.clone()).collect();
     for t in terms {
         if let Some(t) = state.terminals.lock().remove(&t) {
             let _ = t.input.send(rc_core::TerminalInput::Close);

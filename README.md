@@ -2,6 +2,12 @@
 
 Ein Zwei-Fenster-Dateimanager und Transfer-Client im Stil von [WinSCP](https://github.com/winscp/winscp), komplett neu in **Rust** geschrieben, mit einer **Tauri**-Oberfläche. Rust Commander läuft als Desktop-App (Windows, macOS, Linux) und zusätzlich **headless auf einem Zielhost**. Dort stellt er dieselbe Oberfläche im Browser bereit. Laufende Instanzen **finden sich gegenseitig im LAN** und lassen sich direkt aus der App heraus öffnen.
 
+| Desktop: andere Instanz als Panel eingebunden | Web: SFTP-Sitzung mit Terminal auf dem Zielhost |
+|---|---|
+| ![Desktop](docs/screenshots/desktop-peer-panel.png) | ![Web](docs/screenshots/web-sftp-terminal.png) |
+| **Desktop: „Diese Instanz freigeben“** | **Web: Instanzen in der Nähe (LAN-Discovery)** |
+| ![Freigabe](docs/screenshots/desktop-share.png) | ![Nearby](docs/screenshots/web-nearby.png) |
+
 ## Funktionen
 
 ### WinSCP-Funktionsumfang
@@ -119,7 +125,17 @@ cargo test --workspace
 Die Protokoll-Integrationstests laufen nur mit echten Servern und werden über Umgebungsvariablen aktiviert:
 
 - SSH: `RC_TEST_SSH_HOST`, `RC_TEST_SSH_PORT`, `RC_TEST_SSH_USER`, `RC_TEST_SSH_PASSWORD`, `RC_TEST_SSH_KEY`
-- FTP/Cloud: siehe die Kopfkommentare in `crates/rc-core/tests/`
+- FTP/Cloud: `RC_TEST_FTP_URL`, `RC_TEST_FTPES_URL`, `RC_TEST_FTPS_URL`, `RC_TEST_WEBDAV_URL`, `RC_TEST_S3_ENDPOINT`, `RC_TEST_AZURE_ENDPOINT` … Die passenden Testserver (Python-Skripte) liegen in `crates/rc-core/tests/servers/`. Eine Anleitung steht in den Kopfkommentaren von `crates/rc-core/tests/ftp.rs` und `cloud.rs`.
+
+Die Oberfläche lässt sich ohne Backend mit Testdaten ausprobieren: `npm --prefix ui run dev` und dann `http://localhost:5173/?mock=1` öffnen. Der Playwright-Smoke-Test der Oberfläche läuft mit `npm --prefix ui test`.
+
+## Bekannte Einschränkungen
+
+- **Google Cloud Storage** ist implementiert, aber nicht gegen einen echten Dienst getestet (alle anderen Protokolle sind mit echten Servern getestet: OpenSSH, pyftpdlib mit FTPS, WsgiDAV, S3-API von moto, Azurite).
+- Object Stores (S3/Azure/GCS) können abgebrochene **Uploads** nicht fortsetzen und keine Zeitstempel oder Rechte setzen. Downloads lassen sich fortsetzen.
+- WebDAV unterstützt nur Basic-Authentifizierung. SSH-Host-Zertifikate (CA) und vom Server erzwungene Passwortänderungen werden nicht unterstützt.
+- Dateinamen, die kein gültiges UTF-8 sind, werden bei SFTP verlustbehaftet dargestellt.
+- Die Windows- und macOS-Builds sind per Cross-Compile geprüft und über die CI abgedeckt, aber nicht manuell auf diesen Systemen getestet.
 
 ## Sicherheitshinweise
 

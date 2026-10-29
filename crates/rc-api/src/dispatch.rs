@@ -35,7 +35,10 @@ impl RpcError {
 
 impl From<Error> for RpcError {
     fn from(e: Error) -> Self {
-        let code = serde_json::to_value(e.code()).ok().and_then(|v| v.as_str().map(|s| s.to_string())).unwrap_or_else(|| "other".into());
+        let code = serde_json::to_value(e.code())
+            .ok()
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| "other".into());
         RpcError { code, message: e.to_string() }
     }
 }
@@ -86,7 +89,11 @@ pub async fn dispatch(state: &Arc<AppState>, origin: &Origin, method: &str, para
                 target: String,
             }
             let p: P = parse(params)?;
-            let target = if p.target.contains("://") { p.target } else { rc_core::local::to_native(&p.target).display().to_string() };
+            let target = if p.target.contains("://") {
+                p.target
+            } else {
+                rc_core::local::to_native(&p.target).display().to_string()
+            };
             open::that_detached(&target).map_err(|e| RpcError::new("other", format!("cannot open {target}: {e}")))?;
             ok(Value::Null)
         }
@@ -217,7 +224,8 @@ pub async fn dispatch(state: &Arc<AppState>, origin: &Origin, method: &str, para
             }
             let p: P = parse(params)?;
             let url = if p.url.contains("://") { p.url.clone() } else { format!("sftp://{}", p.url) };
-            let (site, _) = SiteConfig::from_url(&url).ok_or_else(|| RpcError::new("invalid_input", format!("cannot parse {url}")))?;
+            let (site, _) = SiteConfig::from_url(&url)
+                .ok_or_else(|| RpcError::new("invalid_input", format!("cannot parse {url}")))?;
             ok(site)
         }
         "sites.toUrl" => {
@@ -431,7 +439,13 @@ pub async fn dispatch(state: &Arc<AppState>, origin: &Origin, method: &str, para
             let t = rc_core::tunnel::start(
                 &p.session,
                 vfs,
-                TunnelSpec { kind: p.kind, bind_host: p.bind_host, bind_port: p.bind_port, target_host: p.target_host, target_port: p.target_port },
+                TunnelSpec {
+                    kind: p.kind,
+                    bind_host: p.bind_host,
+                    bind_port: p.bind_port,
+                    target_host: p.target_host,
+                    target_port: p.target_port,
+                },
             )
             .await?;
             let status = t.status();
@@ -622,8 +636,17 @@ pub fn server_status(st: &AppState) -> ServerStatus {
     s
 }
 
-pub async fn start_server(st: &Arc<AppState>, bind: Option<String>, port: Option<u16>, tls: Option<bool>) -> Result<ServerStatus, RpcError> {
-    let ctl = st.server.read().clone().ok_or_else(|| RpcError::new("unsupported", "web server not available in this build"))?;
+pub async fn start_server(
+    st: &Arc<AppState>,
+    bind: Option<String>,
+    port: Option<u16>,
+    tls: Option<bool>,
+) -> Result<ServerStatus, RpcError> {
+    let ctl = st
+        .server
+        .read()
+        .clone()
+        .ok_or_else(|| RpcError::new("unsupported", "web server not available in this build"))?;
     if !st.server_auth.has_password() && !st.server_auth.is_disabled() {
         return Err(RpcError::new("invalid_input", "set a password for web access first"));
     }
@@ -663,7 +686,12 @@ pub fn http_status(code: &str) -> u16 {
         "not_found" => 404,
         "permission_denied" | "forbidden" => 403,
         "unauthorized" => 401,
-        "invalid_input" | "unknown_method" | "already_exists" | "not_a_directory" | "is_a_directory" | "directory_not_empty" => 400,
+        "invalid_input"
+        | "unknown_method"
+        | "already_exists"
+        | "not_a_directory"
+        | "is_a_directory"
+        | "directory_not_empty" => 400,
         "unsupported" => 501,
         "locked" => 423,
         _ => 500,

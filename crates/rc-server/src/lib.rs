@@ -57,7 +57,8 @@ fn install_crypto_provider() {
 impl ServerControl for WebServer {
     async fn start(&self, state: Arc<AppState>, bind: String, port: u16, tls: bool) -> Result<RunningServer> {
         install_crypto_provider();
-        let ip: std::net::IpAddr = bind.parse().map_err(|_| Error::InvalidInput(format!("invalid bind address {bind}")))?;
+        let ip: std::net::IpAddr =
+            bind.parse().map_err(|_| Error::InvalidInput(format!("invalid bind address {bind}")))?;
         let addr = SocketAddr::new(ip, port);
         // Bind first so errors (port in use) are reported synchronously.
         let std_listener = std::net::TcpListener::bind(addr).map_err(|e| Error::io_at(e, &addr.to_string()))?;
@@ -69,9 +70,10 @@ impl ServerControl for WebServer {
         if tls {
             let pair = tls::load_or_create(&state.config_dir)?;
             fingerprint = Some(pair.fingerprint.clone());
-            let config = axum_server::tls_rustls::RustlsConfig::from_pem(pair.cert_pem.into_bytes(), pair.key_pem.into_bytes())
-                .await
-                .map_err(|e| Error::other(format!("TLS configuration: {e}")))?;
+            let config =
+                axum_server::tls_rustls::RustlsConfig::from_pem(pair.cert_pem.into_bytes(), pair.key_pem.into_bytes())
+                    .await
+                    .map_err(|e| Error::other(format!("TLS configuration: {e}")))?;
             let server = axum_server::tls_rustls::from_tcp_rustls(std_listener, config)
                 .map_err(|e| Error::other(e.to_string()))?
                 .handle(handle.clone());
@@ -81,7 +83,8 @@ impl ServerControl for WebServer {
                 }
             });
         } else {
-            let server = axum_server::from_tcp(std_listener).map_err(|e| Error::other(e.to_string()))?.handle(handle.clone());
+            let server =
+                axum_server::from_tcp(std_listener).map_err(|e| Error::other(e.to_string()))?.handle(handle.clone());
             tokio::spawn(async move {
                 if let Err(e) = server.serve(app.into_make_service_with_connect_info::<SocketAddr>()).await {
                     tracing::error!("web server: {e}");

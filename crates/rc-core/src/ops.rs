@@ -36,7 +36,13 @@ pub struct WalkOptions {
 
 impl Default for WalkOptions {
     fn default() -> Self {
-        WalkOptions { mask: FileMask::default(), exclude_hidden: false, follow_symlinks: false, max_depth: None, concurrency: 8 }
+        WalkOptions {
+            mask: FileMask::default(),
+            exclude_hidden: false,
+            follow_symlinks: false,
+            max_depth: None,
+            concurrency: 8,
+        }
     }
 }
 

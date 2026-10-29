@@ -11,10 +11,20 @@ use globset::{GlobBuilder, GlobMatcher};
 
 #[derive(Debug, Clone)]
 enum Cond {
-    Glob { m: GlobMatcher, dir_only: bool, full_path: bool },
-    Size { op: Op, bytes: u64 },
+    Glob {
+        m: GlobMatcher,
+        dir_only: bool,
+        full_path: bool,
+    },
+    Size {
+        op: Op,
+        bytes: u64,
+    },
     /// Compare modification time with an absolute timestamp.
-    Time { op: Op, ts: i64 },
+    Time {
+        op: Op,
+        ts: i64,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]

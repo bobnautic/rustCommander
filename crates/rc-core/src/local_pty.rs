@@ -68,7 +68,12 @@ pub fn open(opts: TerminalOptions) -> Result<TerminalChannel> {
                         let _ = writer.flush();
                     }
                     TerminalInput::Resize { cols, rows } => {
-                        let _ = master.resize(PtySize { rows: rows.max(1), cols: cols.max(1), pixel_width: 0, pixel_height: 0 });
+                        let _ = master.resize(PtySize {
+                            rows: rows.max(1),
+                            cols: cols.max(1),
+                            pixel_width: 0,
+                            pixel_height: 0,
+                        });
                     }
                     TerminalInput::Close => {
                         let _ = killer.kill();
