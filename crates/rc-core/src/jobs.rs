@@ -244,6 +244,8 @@ impl JobCtx {
 
     /// Undo progress (e.g. when a partially transferred file is retried).
     pub fn sub_bytes(&self, n: u64) {
+        // `fetch_update` is called `try_update` in newer Rust; the new name needs more than our MSRV (1.91).
+        #[allow(deprecated)]
         let _ = self.inner.bytes_done.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(v.saturating_sub(n)));
     }
 

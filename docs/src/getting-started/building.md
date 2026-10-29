@@ -30,7 +30,7 @@ explains how to build the UI.
 ```bash
 npm ci
 npm run dev       # tauri dev: hot-reloading development build
-npm run build     # tauri build: installers in src-tauri/target/release/bundle/
+npm run build     # tauri build: installers in target/release/bundle/
 ```
 
 ## Headless server and CLI

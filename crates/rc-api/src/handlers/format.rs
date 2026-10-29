@@ -141,7 +141,8 @@ fn args(id: &str, p: &FormatParams) -> Vec<String> {
             "--edition".into(),
             "2021".into(),
             "--config".into(),
-            format!("tab_spaces={tab},hard_tabs={}", p.use_tabs),
+            // the editor sends LF text; rustfmt would otherwise fall back to CRLF on Windows
+            format!("tab_spaces={tab},hard_tabs={},newline_style=Unix", p.use_tabs),
         ],
         "gofmt" => vec![],
         "ruff" => vec!["format".into(), "--isolated".into(), "--stdin-filename".into(), "input.py".into(), "-".into()],
