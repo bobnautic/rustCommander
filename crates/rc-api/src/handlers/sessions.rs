@@ -104,6 +104,8 @@ pub async fn connect_site(state: &Arc<AppState>, site: SiteConfig) -> Result<Ses
     let vfs = rc_core::connect(&site, &ctx).await.inspect_err(|e| {
         tracing::warn!(session = %id, "connection to {} failed: {e}", site.display_name());
     })?;
+    // Reconnect transparently when the server drops an idle connection.
+    let vfs: Arc<dyn rc_core::Vfs> = Arc::new(rc_core::reconnect::ReconnectingVfs::new(site.clone(), ctx, vfs));
     let home = vfs.home().await.unwrap_or_else(|_| "/".into());
     let initial_dir = if site.remote_dir.trim().is_empty() { home.clone() } else { site.remote_dir.clone() };
     let summary = SessionSummary {

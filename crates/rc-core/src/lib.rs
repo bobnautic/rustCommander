@@ -17,6 +17,7 @@ pub mod ops;
 pub mod path;
 pub mod prompt;
 pub mod protocols;
+pub mod reconnect;
 pub mod site;
 pub mod search;
 pub mod store;
