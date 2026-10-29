@@ -146,7 +146,7 @@ async fn scan(
     let mut n = 0u64;
     ops::walk(vfs, root, &opts, |item| {
         n += 1;
-        if n % 50 == 0 {
+        if n.is_multiple_of(50) {
             progress(n, &item.entry.path);
         }
         entries.insert(item.rel, (item.entry, item.is_dir));

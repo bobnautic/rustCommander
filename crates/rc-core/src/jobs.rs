@@ -363,7 +363,7 @@ pub type JobListener = Arc<dyn Fn(JobEvent) + Send + Sync>;
 
 #[derive(Debug, Clone)]
 pub enum JobEvent {
-    Updated(Job),
+    Updated(Box<Job>),
     Removed(String),
 }
 
@@ -377,7 +377,7 @@ struct QueueInner {
 impl QueueInner {
     fn emit(&self, job: &JobInner) {
         job.dirty.store(false, Ordering::Relaxed);
-        (self.listener)(JobEvent::Updated(job.snapshot()));
+        (self.listener)(JobEvent::Updated(Box::new(job.snapshot())));
     }
 }
 

@@ -102,7 +102,7 @@ pub async fn external(state: &Arc<AppState>, session: &str, path: &str) -> Resul
         }
     });
 
-    open::that_detached(&dir.join(&name)).map_err(|e| Error::other(format!("cannot open editor: {e}")))?;
+    open::that_detached(dir.join(&name)).map_err(|e| Error::other(format!("cannot open editor: {e}")))?;
     let snapshot = status.lock().clone();
     state.edits.lock().insert(id, EditEntry { status, stop, _watcher: Some(watcher) });
     Ok(snapshot)

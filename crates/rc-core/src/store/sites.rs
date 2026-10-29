@@ -65,7 +65,7 @@ impl SiteStore {
     /// All sites with secrets replaced by [`SECRET_PLACEHOLDER`].
     pub fn list_masked(&self) -> Vec<SiteConfig> {
         let mut v: Vec<SiteConfig> = self.sites.read().iter().cloned().map(Self::masked).collect();
-        v.sort_by(|a, b| (a.folder.to_lowercase(), a.name.to_lowercase()).cmp(&(b.folder.to_lowercase(), b.name.to_lowercase())));
+        v.sort_by_key(|s| (s.folder.to_lowercase(), s.name.to_lowercase()));
         v
     }
 

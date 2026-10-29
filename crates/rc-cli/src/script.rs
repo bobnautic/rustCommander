@@ -202,7 +202,7 @@ impl Script {
                 };
             }
             if tty {
-                let pct = if j.bytes_total > 0 { j.bytes_done * 100 / j.bytes_total } else { 0 };
+                let pct = (j.bytes_done * 100).checked_div(j.bytes_total).unwrap_or(0);
                 let cur = j.current_file.as_deref().map(vpath::file_name).unwrap_or("");
                 eprint!("\r\x1b[K{pct:>3}% {} / {}  {}/s  {cur}", human(j.bytes_done), human(j.bytes_total), human(j.speed as u64));
             }
@@ -315,7 +315,9 @@ impl Script {
                 if !r.vfs.stat(&canon).await?.is_dir() {
                     bail!("{canon} is not a directory");
                 }
-                self.remote.as_mut().map(|r| r.cwd = canon.clone());
+                if let Some(r) = self.remote.as_mut() {
+                    r.cwd = canon.clone();
+                }
                 println!("{canon}");
             }
             "lcd" => {

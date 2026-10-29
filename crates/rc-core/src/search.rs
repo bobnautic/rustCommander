@@ -75,10 +75,8 @@ pub async fn search(
         if !name_mask.is_empty() && !name_mask.matches_name(&e.name) {
             return Ok(true);
         }
-        if !item.is_dir {
-            if params.min_size.is_some_and(|m| e.size < m) || params.max_size.is_some_and(|m| e.size > m) {
-                return Ok(true);
-            }
+        if !item.is_dir && (params.min_size.is_some_and(|m| e.size < m) || params.max_size.is_some_and(|m| e.size > m)) {
+            return Ok(true);
         }
         if let Some(after) = params.modified_after {
             if e.modified.is_none_or(|m| m < after) {
