@@ -17,7 +17,7 @@ Every version is published on the
 |---|---|
 | macOS 10.13+ (Apple silicon and Intel) | `rustCommander-<version>-macos-universal.dmg` |
 | Windows 10/11 | `rustCommander-<version>-windows-x64-setup.exe` (installer) or `rustCommander-<version>-windows-x64-portable.exe` (no installation) |
-| Linux | `rustCommander-<version>-linux-x86_64.AppImage`, `-linux-amd64.deb`, `-linux-x86_64.rpm` |
+| Linux | `rustCommander-<version>-linux-x86_64.AppImage`, `-linux-amd64.deb`, `-linux-x86_64.rpm` (no `.rpm` for pre-releases) |
 | Headless server and CLI | `rcmd-<version>-<platform>.tar.gz` (Linux x86_64/aarch64, macOS arm64/x86_64) or `.zip` (Windows x64) |
 
 `SHA256SUMS.txt` in each release lists the checksums of all files.

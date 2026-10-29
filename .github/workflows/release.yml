@@ -5,8 +5,8 @@ name: Release
 # or with "Run workflow" on the Actions tab (enter the version; the tag is created on the
 # selected branch). Every platform is built and tested first; the GitHub release with all
 # downloads is created only when everything succeeded.
-# Pull requests that change the packaging build all downloads as well (version
-# 0.0.0-pr.<number>, workflow artifacts only, nothing is published).
+# Pull requests that change the packaging build all downloads as well (with the version in
+# the repository, as workflow artifacts only; nothing is published).
 
 on:
   push:
@@ -49,15 +49,16 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
+      - uses: actions/checkout@v5
+        if: github.event_name == 'pull_request'
       - name: Determine version
         id: version
         env:
           INPUT_VERSION: ${{ inputs.version }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           case "$GITHUB_EVENT_NAME" in
             workflow_dispatch) v="${INPUT_VERSION#v}" ;;
-            pull_request) v="0.0.0-pr.$PR_NUMBER" ;;
+            pull_request) v="$(jq -r .version src-tauri/tauri.conf.json)" ;;
             *) v="${GITHUB_REF_NAME#v}" ;;
           esac
           if ! [[ "$v" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
@@ -73,7 +74,7 @@ jobs:
             echo "tag=v$v"
             echo "prerelease=$([[ "$v" == *-* ]] && echo true || echo false)"
           } >> "$GITHUB_OUTPUT"
-          echo "Releasing **v$v**" >> "$GITHUB_STEP_SUMMARY"
+          echo "Version **v$v**" >> "$GITHUB_STEP_SUMMARY"
 
   checks:
     name: Checks
@@ -91,17 +92,20 @@ jobs:
           - name: macOS
             os: macos-latest
             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
-            args: --target universal-apple-darwin --bundles app,dmg
+            target: universal-apple-darwin
+            bundles: app,dmg
           - name: Windows
             os: windows-latest
-            args: --bundles nsis
+            bundles: nsis
           # oldest supported Ubuntu, so the packages run on older glibc versions too
           - name: Linux
             os: ubuntu-22.04
-            args: --bundles deb,rpm,appimage
+            bundles: deb,rpm,appimage
     runs-on: ${{ matrix.os }}
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
+      # RPM versions cannot contain "-", so pre-releases come without an .rpm package
+      RPM: ${{ needs.prepare.outputs.prerelease != 'true' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -135,12 +139,17 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUNDLES: ${{ matrix.bundles }}
+          TARGET: ${{ matrix.target }}
         run: |
           # an empty variable would make the bundler try (and fail) to import a certificate
           for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
             [ -n "${!v}" ] || unset "$v"
           done
-          npx tauri build ${{ matrix.args }} -- --locked
+          if [ "$RPM" != true ]; then BUNDLES="${BUNDLES/,rpm/}"; fi
+          args=(--bundles "$BUNDLES")
+          if [ -n "$TARGET" ]; then args+=(--target "$TARGET"); fi
+          npx tauri build "${args[@]}" -- --locked
       - name: Collect downloads
         shell: bash
         run: |
@@ -157,7 +166,7 @@ jobs:
             Linux)
               cp target/release/bundle/appimage/*.AppImage "$out/$base-linux-x86_64.AppImage"
               cp target/release/bundle/deb/*.deb "$out/$base-linux-amd64.deb"
-              cp target/release/bundle/rpm/*.rpm "$out/$base-linux-x86_64.rpm" ;;
+              if [ "$RPM" = true ]; then cp target/release/bundle/rpm/*.rpm "$out/$base-linux-x86_64.rpm"; fi ;;
           esac
           ls -l "$out"
       - uses: actions/upload-artifact@v4
@@ -259,7 +268,9 @@ jobs:
             echo "| macOS 10.13+ (Apple silicon and Intel) | [\`$b-macos-universal.dmg\`]($url/$b-macos-universal.dmg) |"
             echo "| Windows 10/11, installer | [\`$b-windows-x64-setup.exe\`]($url/$b-windows-x64-setup.exe) |"
             echo "| Windows 10/11, portable (no installation) | [\`$b-windows-x64-portable.exe\`]($url/$b-windows-x64-portable.exe) |"
-            echo "| Linux | [\`.AppImage\`]($url/$b-linux-x86_64.AppImage) · [\`.deb\`]($url/$b-linux-amd64.deb) · [\`.rpm\`]($url/$b-linux-x86_64.rpm) |"
+            linux="[\`.AppImage\`]($url/$b-linux-x86_64.AppImage) · [\`.deb\`]($url/$b-linux-amd64.deb)"
+            if [ "$PRERELEASE" != true ]; then linux="$linux · [\`.rpm\`]($url/$b-linux-x86_64.rpm)"; fi
+            echo "| Linux | $linux |"
             echo "| Headless server and CLI (\`rcmd\`) | \`rcmd-$VERSION-<platform>.tar.gz\` / \`.zip\` below |"
             echo
             echo "Checksums: \`SHA256SUMS.txt\` (\`shasum -a 256 -c SHA256SUMS.txt --ignore-missing\`)."

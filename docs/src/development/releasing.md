@@ -37,7 +37,7 @@ skipped.
 | Checks | Linux, Windows, macOS | the [CI](testing.md#continuous-integration) checks: UI build and tests, `cargo fmt`, `clippy`, `cargo test` |
 | Desktop (macOS) | `macos-latest` | `rustCommander-<version>-macos-universal.dmg` (Apple silicon and Intel) |
 | Desktop (Windows) | `windows-latest` | `rustCommander-<version>-windows-x64-setup.exe` (NSIS installer, English/German) and `rustCommander-<version>-windows-x64-portable.exe` |
-| Desktop (Linux) | `ubuntu-22.04` | `.AppImage`, `.deb` and `.rpm` |
+| Desktop (Linux) | `ubuntu-22.04` | `.AppImage`, `.deb` and `.rpm` (RPM versions cannot contain `-`, so pre-releases have no `.rpm`) |
 | rcmd | Linux x86_64/aarch64, macOS arm64/x86_64, Windows x64 | `rcmd-<version>-<platform>.tar.gz` / `.zip` |
 | Publish release | | the GitHub release with all files, `SHA256SUMS.txt`, download table and generated release notes |
 
@@ -53,8 +53,8 @@ release is marked *latest*, so
   *Artifacts* section and no tag or release is created. Useful to test packaging changes.
 
 Pull requests that change the release workflow, `scripts/set-version.mjs` or
-`src-tauri/tauri.conf.json` run the build jobs too (version `0.0.0-pr.<number>`, workflow
-artifacts only), so packaging changes are tested before they reach a release.
+`src-tauri/tauri.conf.json` run the build jobs too (with the version in the repository,
+as workflow artifacts only), so packaging changes are tested before they reach a release.
 
 If a run failed for a transient reason, **Re-run failed jobs** on the run continues it. When
 the release already exists, the publish job replaces its files.
