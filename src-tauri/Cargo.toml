@@ -1,0 +1,24 @@
+[package]
+name = "rust-commander"
+description = "Rust Commander — a WinSCP-style file manager for SFTP, SCP, FTP(S), WebDAV, S3 and more"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "rust-commander"
+
+[lib]
+name = "rust_commander_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+rc-core.workspace = true
+rc-api.workspace = true
+rc-server.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde_json.workspace = true
+tracing.workspace = true
+tokio.workspace = true

@@ -1,0 +1,16 @@
+{
+  "name": "rust-commander",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Rust Commander — workspace scripts (the UI lives in ui/)",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "ui:dev": "npm --prefix ui run dev",
+    "ui:build": "npm --prefix ui run build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.0"
+  }
+}

@@ -6,7 +6,7 @@ members = [
     "crates/rc-api",
     "crates/rc-server",
     "crates/rc-cli",
-    # "src-tauri",
+    "src-tauri",
 ]
 
 [workspace.package]
