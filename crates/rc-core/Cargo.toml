@@ -8,7 +8,7 @@ license.workspace = true
 [features]
 default = ["ssh", "ftp", "cloud"]
 # SFTP / SCP / SSH terminal / tunnels (russh)
-ssh = []
+ssh = ["dep:russh", "dep:russh-sftp"]
 # FTP / FTPS (suppaftp)
 ftp = []
 # WebDAV / S3 / Azure Blob / Google Cloud Storage (OpenDAL)
@@ -40,6 +40,8 @@ filetime = "0.2"
 fs4 = "1"
 portable-pty = "0.9"
 tokio-socks = "0.5"
+russh = { version = "0.65", default-features = false, features = ["flate2", "ring", "rsa"], optional = true }
+russh-sftp = { version = "3.0.1", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
