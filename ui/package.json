@@ -1,0 +1,38 @@
+{
+  "name": "rust-commander-ui",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Rust Commander frontend (Tauri desktop + web mode)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:mock": "vite --open /?mock=1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node tests/smoke.mjs"
+  },
+  "dependencies": {
+    "@codemirror/language": "^6.11.3",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/search": "^6.5.11",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.38.6",
+    "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/plugin-dialog": "^2.4.2",
+    "@uiw/react-codemirror": "^4.25.2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "lucide-react": "^1.50.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.26",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^5.1.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.0"
+  }
+}
