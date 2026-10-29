@@ -1,0 +1,48 @@
+[package]
+name = "rc-core"
+description = "Rust Commander core: virtual file systems, protocols, transfers, synchronization"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["ssh", "ftp", "cloud"]
+# SFTP / SCP / SSH terminal / tunnels (russh)
+ssh = []
+# FTP / FTPS (suppaftp)
+ftp = []
+# WebDAV / S3 / Azure Blob / Google Cloud Storage (OpenDAL)
+cloud = []
+
+[dependencies]
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+base64.workspace = true
+sha2.workspace = true
+sha1.workspace = true
+md-5.workspace = true
+hex.workspace = true
+rand.workspace = true
+directories.workspace = true
+globset.workspace = true
+regex.workspace = true
+filetime = "0.2"
+fs4 = "1"
+portable-pty = "0.9"
+tokio-socks = "0.5"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
