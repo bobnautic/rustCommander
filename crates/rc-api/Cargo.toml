@@ -1,7 +1,33 @@
 [package]
 name = "rc-api"
+description = "Rust Commander application layer: RPC dispatcher shared by the desktop app and the web server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+rc-core.workspace = true
+rc-discovery.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+parking_lot.workspace = true
+base64.workspace = true
+sha2.workspace = true
+hex.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+argon2 = "0.5"
+gethostname = "1"
+open = "5"
+notify = "8"
+
+[dev-dependencies]
+tempfile = "3"

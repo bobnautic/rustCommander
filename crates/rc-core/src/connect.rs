@@ -52,3 +52,19 @@ pub async fn connect(site: &SiteConfig, ctx: &ConnectContext) -> Result<Arc<dyn 
         p => Err(Error::unsupported(format!("protocol {p:?} is not compiled into this build"))),
     }
 }
+
+/// Protocols compiled into this build.
+pub fn available_protocols() -> Vec<Protocol> {
+    let mut v = vec![Protocol::Local];
+    if cfg!(feature = "ssh") {
+        v.extend([Protocol::Sftp, Protocol::Scp]);
+    }
+    if cfg!(feature = "ftp") {
+        v.push(Protocol::Ftp);
+    }
+    if cfg!(feature = "cloud") {
+        v.extend([Protocol::Webdav, Protocol::S3, Protocol::Azure, Protocol::Gcs]);
+    }
+    v.push(Protocol::Rcmd);
+    v
+}
