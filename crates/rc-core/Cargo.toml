@@ -49,6 +49,7 @@ tar = "0.4"
 flate2 = "1"
 reqwest.workspace = true
 rustls.workspace = true
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 russh = { version = "0.65", default-features = false, features = ["flate2", "ring", "rsa"], optional = true }
 russh-sftp = { version = "3.0.1", optional = true }
 

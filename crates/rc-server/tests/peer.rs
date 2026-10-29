@@ -66,6 +66,32 @@ async fn peer_file_access() {
     peer.set_permissions(&format!("{base}/remote/g.bin"), 0o600).await.unwrap();
     assert_eq!(peer.stat(&format!("{base}/remote/g.bin")).await.unwrap().permissions, Some(0o600));
     peer.remove_dir_all(&format!("{base}/remote")).await.unwrap();
+
+    // Shell on the peer through its event stream.
+    if cfg!(unix) {
+        assert!(peer.capabilities().terminal);
+        let mut term = peer.open_terminal(rc_core::TerminalOptions::default()).await.unwrap();
+        term.input.send(rc_core::TerminalInput::Data(b"echo PEER_$((20+22))\n".to_vec())).unwrap();
+        let mut out = String::new();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !out.contains("PEER_42") && std::time::Instant::now() < deadline {
+            if let Ok(Some(rc_core::TerminalOutput::Data(d))) =
+                tokio::time::timeout(std::time::Duration::from_secs(1), term.output.recv()).await
+            {
+                out.push_str(&String::from_utf8_lossy(&d));
+            }
+        }
+        assert!(out.contains("PEER_42"), "{out}");
+        term.input.send(rc_core::TerminalInput::Data(b"exit\n".to_vec())).unwrap();
+        let mut exited = false;
+        while let Ok(Some(o)) = tokio::time::timeout(std::time::Duration::from_secs(5), term.output.recv()).await {
+            if let rc_core::TerminalOutput::Exit(_) = o {
+                exited = true;
+                break;
+            }
+        }
+        assert!(exited);
+    }
     assert!(peer.try_stat(&format!("{base}/remote")).await.unwrap().is_none());
     server.stop().await.unwrap();
 }

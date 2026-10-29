@@ -80,7 +80,7 @@ impl ServerCertVerifier for PinnedVerifier {
     }
 }
 
-fn client(pinned: Option<String>, timeout: Duration) -> Result<(reqwest::Client, Arc<PinnedVerifier>)> {
+fn client(pinned: Option<String>, timeout: Duration) -> Result<(reqwest::Client, Arc<PinnedVerifier>, Arc<rustls::ClientConfig>)> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let verifier = Arc::new(PinnedVerifier { pinned, seen: Mutex::new(None), provider: provider.clone() });
     let config = rustls::ClientConfig::builder_with_provider(provider)
@@ -90,21 +90,24 @@ fn client(pinned: Option<String>, timeout: Duration) -> Result<(reqwest::Client,
         .with_custom_certificate_verifier(verifier.clone())
         .with_no_client_auth();
     let c = reqwest::Client::builder()
-        .use_preconfigured_tls(config)
+        .use_preconfigured_tls(config.clone())
         .connect_timeout(timeout)
         .no_proxy()
         .build()
         .map_err(|e| Error::other(e.to_string()))?;
-    Ok((c, verifier))
+    Ok((c, verifier, Arc::new(config)))
 }
 
 pub struct RcmdVfs {
     base: String,
     client: reqwest::Client,
+    tls: Option<Arc<rustls::ClientConfig>>,
     token: String,
     host: String,
     info: SessionInfo,
     remote_caps: Capabilities,
+    /// The peer lets web clients open shells.
+    shell_allowed: bool,
 }
 
 fn map_http_error(status: reqwest::StatusCode, body: &Value) -> Error {
@@ -134,22 +137,25 @@ fn net_err(e: reqwest::Error) -> Error {
     }
 }
 
+async fn rpc_call<T: DeserializeOwned>(client: &reqwest::Client, base: &str, token: &str, method: &str, params: Value) -> Result<T> {
+    let resp = client
+        .post(format!("{base}/api/rpc"))
+        .bearer_auth(token)
+        .json(&json!({ "method": method, "params": params }))
+        .send()
+        .await
+        .map_err(net_err)?;
+    let status = resp.status();
+    let body: Value = resp.json().await.map_err(net_err)?;
+    if !status.is_success() {
+        return Err(map_http_error(status, &body));
+    }
+    serde_json::from_value(body["result"].clone()).map_err(|e| Error::protocol(format!("{method}: {e}")))
+}
+
 impl RcmdVfs {
     async fn call<T: DeserializeOwned>(&self, method: &str, params: Value) -> Result<T> {
-        let resp = self
-            .client
-            .post(format!("{}/api/rpc", self.base))
-            .bearer_auth(&self.token)
-            .json(&json!({ "method": method, "params": params }))
-            .send()
-            .await
-            .map_err(net_err)?;
-        let status = resp.status();
-        let body: Value = resp.json().await.map_err(net_err)?;
-        if !status.is_success() {
-            return Err(map_http_error(status, &body));
-        }
-        serde_json::from_value(body["result"].clone()).map_err(|e| Error::protocol(format!("{method}: {e}")))
+        rpc_call(&self.client, &self.base, &self.token, method, params).await
     }
 
     fn sp(&self, path: &str) -> Value {
@@ -166,7 +172,7 @@ pub async fn connect(site: &SiteConfig, ctx: &ConnectContext) -> Result<Arc<dyn 
     // 1. Determine which certificate to trust (TOFU, pinned per host).
     let mut pinned = site.rcmd.fingerprint.clone().filter(|f| !f.is_empty());
     if site.rcmd.tls && pinned.is_none() {
-        let (probe, verifier) = client(None, timeout)?;
+        let (probe, verifier, _) = client(None, timeout)?;
         probe.get(format!("{base}/api/info")).timeout(timeout).send().await.map_err(net_err)?;
         let seen = verifier.seen.lock().clone().ok_or_else(|| Error::protocol("no certificate presented"))?;
         let key = KnownHosts::tls_key(&site.host, port);
@@ -194,7 +200,7 @@ pub async fn connect(site: &SiteConfig, ctx: &ConnectContext) -> Result<Arc<dyn 
         }
         pinned = Some(seen);
     }
-    let (client, _) = client(pinned, timeout)?;
+    let (client, _, tls_config) = client(pinned, timeout)?;
 
     // 2. Log in.
     let password = match &site.password {
@@ -225,8 +231,18 @@ pub async fn connect(site: &SiteConfig, ctx: &ConnectContext) -> Result<Arc<dyn 
         return Err(map_http_error(status, &body));
     };
 
-    let mut vfs = RcmdVfs { base: base.clone(), client, token, host: site.host.clone(), info: SessionInfo::default(), remote_caps: Capabilities::default() };
+    let mut vfs = RcmdVfs {
+        base: base.clone(),
+        client,
+        tls: site.rcmd.tls.then_some(tls_config),
+        token,
+        host: site.host.clone(),
+        info: SessionInfo::default(),
+        remote_caps: Capabilities::default(),
+        shell_allowed: false,
+    };
     let app: Value = vfs.call("app.info", Value::Null).await?;
+    vfs.shell_allowed = app["features"]["terminal"].as_bool().unwrap_or(false);
     let sessions: Vec<Value> = vfs.call("session.list", Value::Null).await?;
     if let Some(local) = sessions.iter().find(|s| s["id"] == PEER_SESSION) {
         vfs.remote_caps = serde_json::from_value(local["capabilities"].clone()).unwrap_or_default();
@@ -251,8 +267,8 @@ impl Vfs for RcmdVfs {
             permissions: self.remote_caps.permissions,
             owner: self.remote_caps.owner,
             symlinks: self.remote_caps.symlinks,
-            exec: self.remote_caps.exec,
-            terminal: false,
+            exec: self.remote_caps.exec && self.shell_allowed,
+            terminal: self.remote_caps.terminal && self.shell_allowed,
             tunnels: false,
             server_copy: false,
             resume_upload: true,
@@ -377,6 +393,86 @@ impl Vfs for RcmdVfs {
 
     async fn exec(&self, command: &str, cwd: Option<&str>) -> Result<ExecOutput> {
         self.call("fs.exec", json!({ "session": PEER_SESSION, "command": command, "cwd": cwd })).await
+    }
+
+    async fn open_terminal(&self, opts: TerminalOptions) -> Result<TerminalChannel> {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        use tokio_tungstenite::tungstenite::Message;
+
+        // Subscribe to the peer's events first so no output is missed.
+        let ws_url = format!("{}/api/events", self.base.replacen("http", "ws", 1));
+        let mut req = ws_url.into_client_request().map_err(|e| Error::protocol(e.to_string()))?;
+        req.headers_mut().insert(
+            "authorization",
+            format!("Bearer {}", self.token).parse().map_err(|_| Error::protocol("bad token"))?,
+        );
+        let connector = match &self.tls {
+            Some(cfg) => tokio_tungstenite::Connector::Rustls(cfg.clone()),
+            None => tokio_tungstenite::Connector::Plain,
+        };
+        let (mut ws, _) = tokio_tungstenite::connect_async_tls_with_config(req, None, true, Some(connector))
+            .await
+            .map_err(|e| Error::ConnectionLost(format!("event stream: {e}")))?;
+        let info: Value = self
+            .call("terminal.open", json!({ "session": PEER_SESSION, "cols": opts.cols, "rows": opts.rows, "cwd": opts.cwd }))
+            .await?;
+        let id = info["id"].as_str().unwrap_or_default().to_string();
+        let (in_tx, mut in_rx) = mpsc::unbounded_channel::<TerminalInput>();
+        let (out_tx, out_rx) = mpsc::unbounded_channel::<TerminalOutput>();
+
+        let (client, base, token, tid) = (self.client.clone(), self.base.clone(), self.token.clone(), id.clone());
+        tokio::spawn(async move {
+            while let Some(input) = in_rx.recv().await {
+                let r = match input {
+                    TerminalInput::Data(d) => {
+                        let data = String::from_utf8_lossy(&d).into_owned();
+                        rpc_call::<Value>(&client, &base, &token, "terminal.write", json!({ "id": tid, "data": data })).await
+                    }
+                    TerminalInput::Resize { cols, rows } => {
+                        rpc_call::<Value>(&client, &base, &token, "terminal.resize", json!({ "id": tid, "cols": cols, "rows": rows })).await
+                    }
+                    TerminalInput::Close => break,
+                };
+                if r.is_err() {
+                    break;
+                }
+            }
+            let _ = rpc_call::<Value>(&client, &base, &token, "terminal.close", json!({ "id": tid })).await;
+        });
+
+        tokio::spawn(async move {
+            use base64::Engine;
+            let b64 = base64::engine::general_purpose::STANDARD;
+            let mut code = None;
+            while let Some(msg) = ws.next().await {
+                let Ok(Message::Text(text)) = msg else {
+                    if msg.is_err() {
+                        break;
+                    }
+                    continue;
+                };
+                let Ok(ev) = serde_json::from_str::<Value>(text.as_str()) else { continue };
+                if ev["payload"]["id"] != id.as_str() {
+                    continue;
+                }
+                match ev["name"].as_str() {
+                    Some("terminal.data") => {
+                        let data = b64.decode(ev["payload"]["data"].as_str().unwrap_or("")).unwrap_or_default();
+                        if out_tx.send(TerminalOutput::Data(data)).is_err() {
+                            break;
+                        }
+                    }
+                    Some("terminal.exit") => {
+                        code = ev["payload"]["code"].as_i64().map(|c| c as i32);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            let _ = out_tx.send(TerminalOutput::Exit(code));
+            let _ = ws.close(None).await;
+        });
+        Ok(TerminalChannel { input: in_tx, output: out_rx })
     }
 
     async fn checksum(&self, path: &str, algo: ChecksumAlgo) -> Result<Option<String>> {
