@@ -1,4 +1,4 @@
-//! WinSCP-style file masks: `*.txt; *.log | tmp/; *.bak`.
+//! File masks: `*.txt; *.log | tmp/; *.bak`.
 //!
 //! * Patterns are separated by `;` (or `,`); the part after `|` lists exclusions.
 //! * `*`, `?` and `[abc]` wildcards; matching is case-insensitive.

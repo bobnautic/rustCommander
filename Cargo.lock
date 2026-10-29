@@ -4627,6 +4627,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "chrono",
+ "directories",
  "futures",
  "gethostname",
  "hex",

@@ -2,7 +2,7 @@
 //!
 //! * `rcmd serve`    run on a target host and use the full UI from a browser
 //! * `rcmd discover` list Rust Commander instances on the LAN
-//! * `rcmd script`   WinSCP-style scripting (open, ls, get, put, synchronize, ...)
+//! * `rcmd script`   batch scripting (open, ls, get, put, synchronize, ...)
 
 mod prompt;
 mod script;
@@ -71,7 +71,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Run a WinSCP-style script (file, `-` for stdin) or commands given with -c.
+    /// Run a script (file, `-` for stdin) or commands given with -c.
     Script {
         file: Option<PathBuf>,
         /// Command to run (repeatable), e.g. -c "open sftp://user@host" -c "ls".

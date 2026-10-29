@@ -108,7 +108,7 @@ export async function startTransfer(srcSession: string, srcPaths: string[], dstS
     for (const side of ['left', 'right'] as Side[]) {
       const p = getPanel(side);
       if (p.session === srcSession && srcPaths.some((x) => P.dirname(x) === p.path)) {
-        // clear the selection of the source panel like WinSCP does
+        // the copied items are done with: clear the source panel's selection
         selectNone(side);
       }
     }
@@ -226,6 +226,40 @@ export function showChecksum(side: Side) {
   const e = focusedEntry(side);
   if (!e || e.name === PARENT || isDirLike(e)) return toast.info(tr('ops.checksumFileOnly'));
   openDialog('checksum', { session: getPanel(side).session, entry: e });
+}
+
+/** Compare checksums of the selected items with what is at the same place in the other panel. */
+export function compareFingerprints(side: Side) {
+  const items = targets(side).filter((e) => e.name !== PARENT);
+  if (!items.length) return toast.info(tr('ops.nothingSelected'));
+  const src = getPanel(side);
+  const dst = getPanel(other(side));
+  if (src.session === dst.session && src.path === dst.path) return toast.info(tr('fp.samePanel'));
+  // the same files a copy with the default transfer settings would take
+  const t = useApp.getState().settings?.transfer;
+  const options = t ? { fileMask: t.fileMask, excludeHidden: t.excludeHidden } : undefined;
+  openDialog('fingerprint', { srcSession: src.session, srcPaths: items.map((e) => e.path), dstSession: dst.session, dstDir: dst.path, options });
+}
+
+/** Text comparison of the focused file with the file of the same name in the other panel. */
+export function diffWithOtherPanel(side: Side) {
+  const e = focusedEntry(side);
+  if (!e || e.name === PARENT || isDirLike(e)) return toast.info(tr('ops.checksumFileOnly'));
+  const src = getPanel(side);
+  const dst = getPanel(other(side));
+  const peer = dst.entries.find((x) => x.name === e.name);
+  if (!peer || isDirLike(peer)) return toast.info(tr('diff.noCounterpart', { name: e.name }));
+  const label = (session: string, path: string) => `${session === 'local' ? tr('session.local') : sessionName(session)}: ${path}`;
+  const [left, right] = side === 'left' ? [{ s: src.session, e }, { s: dst.session, e: peer }] : [{ s: dst.session, e: peer }, { s: src.session, e }];
+  openDialog('diff', {
+    left: { label: label(left.s, left.e.path), session: left.s, path: left.e.path, fileName: left.e.name },
+    right: { label: label(right.s, right.e.path), session: right.s, path: right.e.path, fileName: right.e.name },
+  });
+}
+
+export function openFileDialog() {
+  const p = getPanel(activeSide());
+  openDialog('openFile', { session: p.session, dir: p.path });
 }
 
 export async function copyText(text: string, what?: string) {

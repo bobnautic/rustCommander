@@ -1,4 +1,4 @@
-//! Import sites from OpenSSH config, WinSCP.ini, FileZilla and our own JSON export.
+//! Import sites from OpenSSH config, FileZilla and our own JSON export.
 
 use base64::Engine;
 
@@ -91,134 +91,6 @@ pub fn read_openssh_config_text() -> Result<String> {
     let home = directories::UserDirs::new().ok_or_else(|| Error::other("no home directory"))?;
     let path = home.home_dir().join(".ssh").join("config");
     std::fs::read_to_string(&path).map_err(|e| Error::io_at(e, &path.display().to_string()))
-}
-
-fn url_decode(s: &str) -> String {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(b[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// WinSCP's reversible password obfuscation (used when no master password is set).
-fn winscp_decrypt_password(hex: &str, key: &str) -> Option<String> {
-    const MAGIC: u8 = 0xA3;
-    const FLAG: u8 = 0xFF;
-    let digits: Vec<u8> = hex.chars().map(|c| c.to_digit(16).map(|d| d as u8)).collect::<Option<Vec<u8>>>()?;
-    let mut pos = 0;
-    let mut next = || -> Option<u8> {
-        if pos + 1 >= digits.len() {
-            return None;
-        }
-        let a = (digits[pos] << 4) | digits[pos + 1];
-        pos += 2;
-        Some(!(a ^ MAGIC))
-    };
-    let flag = next()?;
-    let length = if flag == FLAG {
-        next()?;
-        next()?
-    } else {
-        flag
-    };
-    let skip = next()? as usize;
-    for _ in 0..skip {
-        next()?;
-    }
-    let mut res = Vec::with_capacity(length as usize);
-    for _ in 0..length {
-        res.push(next()?);
-    }
-    let s = String::from_utf8(res).ok()?;
-    if flag == FLAG {
-        s.strip_prefix(key).map(|x| x.to_string())
-    } else {
-        Some(s)
-    }
-}
-
-/// Exported `WinSCP.ini` (`[Sessions\...]` sections) → sites.
-pub fn from_winscp_ini(content: &str) -> Vec<SiteConfig> {
-    let mut out = Vec::new();
-    let mut cur: Option<(String, Vec<(String, String)>)> = None;
-    let mut finish = |cur: Option<(String, Vec<(String, String)>)>| {
-        let Some((section, kv)) = cur else { return };
-        let Some(name) = section.strip_prefix("Sessions\\") else { return };
-        let full = url_decode(name);
-        if full == "Default Settings" {
-            return;
-        }
-        let (folder, short) = match full.rfind('/') {
-            Some(i) => (full[..i].to_string(), full[i + 1..].to_string()),
-            None => (String::new(), full.clone()),
-        };
-        let get = |k: &str| kv.iter().find(|(kk, _)| kk.eq_ignore_ascii_case(k)).map(|(_, v)| v.clone());
-        let mut s = SiteConfig {
-            name: short,
-            folder: if folder.is_empty() { "Imported/WinSCP".into() } else { format!("Imported/WinSCP/{folder}") },
-            ..Default::default()
-        };
-        s.host = get("HostName").unwrap_or_default();
-        s.username = url_decode(&get("UserName").unwrap_or_default());
-        s.port = get("PortNumber").and_then(|p| p.parse().ok()).unwrap_or(0);
-        s.protocol = match get("FSProtocol").as_deref() {
-            Some("0") => Protocol::Scp,
-            Some("5") => Protocol::Ftp,
-            Some("6") => Protocol::Webdav,
-            Some("7") => Protocol::S3,
-            _ => Protocol::Sftp,
-        };
-        match get("Ftps").as_deref() {
-            Some("1") => s.ftp.encryption = FtpEncryption::Implicit,
-            Some("2") | Some("3") => s.ftp.encryption = FtpEncryption::Explicit,
-            _ => {}
-        }
-        if s.protocol == Protocol::Webdav {
-            s.webdav.https = get("Ftps").as_deref().is_some_and(|v| v != "0");
-        }
-        s.remote_dir = url_decode(&get("RemoteDirectory").unwrap_or_default());
-        s.local_dir = url_decode(&get("LocalDirectory").unwrap_or_default());
-        if let Some(k) = get("PublicKeyFile") {
-            let k = url_decode(&k);
-            if !k.is_empty() {
-                s.ssh.private_key_path = Some(k);
-            }
-        }
-        if let Some(p) = get("Password") {
-            let key = format!("{}{}", s.username, s.host);
-            s.password = winscp_decrypt_password(&p, &key);
-        }
-        if let Some(t) = get("Timeout").and_then(|v| v.parse().ok()) {
-            s.timeout_secs = t;
-        }
-        if !s.host.is_empty() {
-            out.push(s);
-        }
-    };
-    for line in content.lines() {
-        let line = line.trim();
-        if line.starts_with('[') && line.ends_with(']') {
-            finish(cur.take());
-            cur = Some((line[1..line.len() - 1].to_string(), Vec::new()));
-        } else if let Some((k, v)) = line.split_once('=') {
-            if let Some((_, kv)) = cur.as_mut() {
-                kv.push((k.trim().to_string(), v.trim().to_string()));
-            }
-        }
-    }
-    finish(cur);
-    out
 }
 
 /// FileZilla `sitemanager.xml` → sites.
@@ -350,32 +222,6 @@ mod tests {
         assert_eq!(s[0].port, 2222);
         assert_eq!(s[0].ssh.jump_site_id.as_deref(), Some("bastion"));
         assert_eq!(s[2].host, "1.2.3.4");
-    }
-
-    #[test]
-    fn winscp() {
-        let ini = "[Sessions\\My%20Folder/Server%201]\nHostName=example.org\nUserName=root\nPortNumber=2022\nFSProtocol=2\nRemoteDirectory=/var/www\n[Sessions\\ftp]\nHostName=ftp.example.org\nFSProtocol=5\nFtps=3\n";
-        let s = from_winscp_ini(ini);
-        assert_eq!(s.len(), 2);
-        assert_eq!(s[0].name, "Server 1");
-        assert_eq!(s[0].folder, "Imported/WinSCP/My Folder");
-        assert_eq!(s[0].port, 2022);
-        assert_eq!(s[1].protocol, Protocol::Ftp);
-        assert_eq!(s[1].ftp.encryption, FtpEncryption::Explicit);
-    }
-
-    #[test]
-    fn winscp_password() {
-        fn enc(c: u8) -> String {
-            format!("{:02X}", !c ^ 0xA3)
-        }
-        let key = "rootexample.org";
-        let full = format!("{key}s3cr3t");
-        let mut hex = enc(0xFF) + &enc(0) + &enc(full.len() as u8) + &enc(2) + &enc(7) + &enc(9);
-        for b in full.bytes() {
-            hex += &enc(b);
-        }
-        assert_eq!(winscp_decrypt_password(&hex, key).as_deref(), Some("s3cr3t"));
     }
 
     #[test]

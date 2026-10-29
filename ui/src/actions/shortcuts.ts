@@ -53,6 +53,8 @@ export const BINDINGS: Record<string, Action> = {
   'Ctrl+\\': (s) => void goRoot(s),
   'Ctrl+Shift+C': (s) => ops.copyPaths(s),
   'Ctrl+,': () => openSingleton('preferences', {}),
+  'Ctrl+P': () => ops.openFileDialog(),
+  'Ctrl+K': (s) => ops.compareFingerprints(s),
   'Ctrl+U': (s) => {
     if (web()) void ops.uploadFromComputer(s);
   },

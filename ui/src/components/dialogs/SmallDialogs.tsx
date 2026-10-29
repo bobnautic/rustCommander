@@ -40,7 +40,20 @@ export function ConfirmDialog({ props, close }: { props: ConfirmProps; close: ()
           okLabel={props.okLabel}
           cancelLabel={props.cancelLabel}
           danger={props.danger}
-          extra={props.checkbox ? <Checkbox label={props.checkbox.label} checked={checked} onChange={setChecked} /> : undefined}
+          extra={
+            props.checkbox ? (
+              <Checkbox label={props.checkbox.label} checked={checked} onChange={setChecked} />
+            ) : props.alt ? (
+              <Button
+                onClick={() => {
+                  props.alt!.onClick();
+                  done(false);
+                }}
+              >
+                {props.alt.label}
+              </Button>
+            ) : undefined
+          }
         />
       }
     >
@@ -324,7 +337,9 @@ const SHORTCUT_DOCS: [string, string][] = [
   ['Ctrl+L', 'help.focusPath'], ['Ctrl+D', 'bookmarks.add'], ['Ctrl+Shift+S', 'sync.title'], ['Ctrl+B', 'sidebar.toggle'], ['Ctrl+Shift+E', 'explorer.title'], ['Ctrl+J', 'dock.title'],
   ['Ctrl+Shift+C', 'ops.copyPath'], ['Ctrl+,', 'prefs.title'], ['Alt+←/→', 'help.backForward'],
   ['Tab', 'help.switchPanel'], ['Insert / Space', 'help.toggleSelect'], ['Ctrl+A', 'panel.selectAll'], ['+ / −', 'select.byMask'], ['*', 'select.invert'],
-  ['Backspace', 'nav.up'], ['Enter', 'ops.open'], ['A–Z', 'help.typeAhead'], ['Ctrl+S', 'editor.save'],
+  ['Backspace', 'nav.up'], ['Enter', 'ops.open'], ['A–Z', 'help.typeAhead'], ['Ctrl+P', 'openFile.title'], ['Ctrl+K', 'fp.menu'],
+  ['Ctrl+S', 'editor.save'], ['Shift+Alt+F', 'editor.format'], ['Ctrl+G', 'editor.goToLine'], ['Ctrl+/', 'editor.tools.comment'],
+  ['Ctrl+Shift+M', 'editor.problems'], ['F8', 'help.nextProblem'], ['Ctrl+= / Ctrl+-', 'help.editorZoom'],
 ];
 
 export function ShortcutsDialog({ close }: DP<'shortcuts'>) {
@@ -333,7 +348,7 @@ export function ShortcutsDialog({ close }: DP<'shortcuts'>) {
     <Dialog title={t('help.shortcuts')} icon={Keyboard} onClose={close} onSubmit={close} width={620} footer={<div className="dlg-foot-buttons"><Button variant="primary" onClick={close}>{t('common.close')}</Button></div>}>
       <div className="shortcut-grid">
         {SHORTCUT_DOCS.map(([k, label]) => (
-          <div key={k} className="shortcut-row">
+          <div key={k + label} className="shortcut-row">
             <kbd className="kbd">{keyLabel(k)}</kbd>
             <span>{t(label as Parameters<typeof t>[0])}</span>
           </div>

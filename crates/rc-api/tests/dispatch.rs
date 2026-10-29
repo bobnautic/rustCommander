@@ -253,3 +253,96 @@ async fn contract_shapes() {
     let err = dispatch(&st, &Origin::Desktop, "no.such", Value::Null).await.unwrap_err();
     assert_eq!(err.code, "unknown_method");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn compare_pairs_before_copy() {
+    let (dir, st) = state().await;
+    let base = rc_core::local::from_native(dir.path());
+    let write = |rel: &str, content: &str| {
+        let p = dir.path().join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, content).unwrap();
+    };
+    write("src/site/index.html", "<h1>new</h1>");
+    write("src/site/css/main.css", "body{}");
+    write("src/site/js/app.js", "same");
+    write("src/notes.txt", "hello");
+    write("dst/site/index.html", "<h1>old</h1>");
+    write("dst/site/js/app.js", "same");
+    write("dst/site/only-at-target.txt", "x");
+    write("dst/notes.txt", "hello");
+
+    let r = call(
+        &st,
+        "compare.pairs",
+        json!({ "srcSession": "local", "srcPaths": [format!("{base}/src/site"), format!("{base}/src/notes.txt")], "dstSession": "local", "dstDir": format!("{base}/dst") }),
+    )
+    .await;
+    assert_eq!(r["truncated"], false);
+    let pairs = r["pairs"].as_array().unwrap();
+    let rels: Vec<&str> = pairs.iter().map(|p| p["rel"].as_str().unwrap()).collect();
+    assert_eq!(rels, ["site/css/main.css", "site/index.html", "site/js/app.js", "notes.txt"]);
+    assert!(pairs[0]["target"].is_null());
+    assert_eq!(pairs[0]["targetPath"], format!("{base}/dst/site/css/main.css"));
+    assert_eq!(pairs[1]["target"]["path"], format!("{base}/dst/site/index.html"));
+    assert_eq!(pairs[2]["target"]["size"], 4);
+    assert_eq!(pairs[3]["source"]["path"], format!("{base}/src/notes.txt"));
+
+    // Fingerprints of a pair: the UI compares the checksums of both sides.
+    let sum = |path: String| call(&st, "fs.checksum", json!({ "session": "local", "path": path, "algo": "sha256" }));
+    assert_eq!(sum(format!("{base}/src/site/js/app.js")).await, sum(format!("{base}/dst/site/js/app.js")).await);
+    assert_ne!(sum(format!("{base}/src/site/index.html")).await, sum(format!("{base}/dst/site/index.html")).await);
+
+    // Single item copied under a new name, masks and the file limit.
+    let r = call(
+        &st,
+        "compare.pairs",
+        json!({ "srcSession": "local", "srcPaths": [format!("{base}/src/notes.txt")], "dstSession": "local", "dstDir": format!("{base}/dst/site"), "newName": "index.html" }),
+    )
+    .await;
+    assert_eq!(r["pairs"][0]["rel"], "index.html");
+    assert_eq!(r["pairs"][0]["target"]["name"], "index.html");
+    let r = call(
+        &st,
+        "compare.pairs",
+        json!({ "srcSession": "local", "srcPaths": [format!("{base}/src/site")], "dstSession": "local", "dstDir": format!("{base}/dst"), "fileMask": "*.js; *.css" }),
+    )
+    .await;
+    assert_eq!(r["pairs"].as_array().unwrap().len(), 2);
+    let r = call(
+        &st,
+        "compare.pairs",
+        json!({ "srcSession": "local", "srcPaths": [format!("{base}/src/site")], "dstSession": "local", "dstDir": format!("{base}/dst"), "maxFiles": 2 }),
+    )
+    .await;
+    assert_eq!(r["pairs"].as_array().unwrap().len(), 2);
+    assert_eq!(r["truncated"], true);
+    let err = dispatch(&st, &Origin::Desktop, "compare.pairs", json!({ "srcSession": "local", "srcPaths": [format!("{base}/missing")], "dstSession": "local", "dstDir": base })).await.unwrap_err();
+    assert_eq!(err.code, "not_found");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn editor_settings_and_formatters() {
+    let (_dir, st) = state().await;
+    let settings = call(&st, "settings.get", Value::Null).await;
+    assert_eq!(settings["editor"]["lint"], true);
+    assert_eq!(settings["editor"]["formatOnSave"], false);
+    assert_eq!(settings["editor"]["printWidth"], 80);
+
+    let list = call(&st, "edit.formatters", Value::Null).await;
+    let ids: Vec<&str> = list.as_array().unwrap().iter().map(|f| f["id"].as_str().unwrap()).collect();
+    let err = dispatch(&st, &Origin::Desktop, "edit.format", json!({ "language": "COBOL", "content": "x" }))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, "unsupported");
+    if ids.contains(&"rustfmt") {
+        let r = call(
+            &st,
+            "edit.format",
+            json!({ "language": "Rust", "fileName": "a.rs", "content": "fn f(){}", "tabSize": 2, "useTabs": false }),
+        )
+        .await;
+        assert_eq!(r["content"], "fn f() {}\n");
+        assert_eq!(r["formatter"], "rustfmt");
+    }
+}

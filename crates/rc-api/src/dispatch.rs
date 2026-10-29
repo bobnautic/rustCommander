@@ -15,7 +15,7 @@ use rc_core::sync::SyncParams;
 use rc_core::tunnel::{TunnelKind, TunnelSpec};
 use rc_core::{Error, Protocol};
 
-use crate::handlers::{discovery, edit, explorer, fs, jobs, misc, sessions, terminal};
+use crate::handlers::{compare, discovery, edit, explorer, format, fs, jobs, misc, sessions, terminal};
 use crate::server::ServerStatus;
 use crate::settings::Settings;
 use crate::state::{AppState, Bookmark, CustomCommand, Origin};
@@ -201,7 +201,6 @@ pub async fn dispatch(state: &Arc<AppState>, origin: &Origin, method: &str, para
             let sites = match p.format.as_str() {
                 "openssh" if content.trim().is_empty() => import::read_openssh_config()?,
                 "openssh" => import::from_openssh_config(&content),
-                "winscp" => import::from_winscp_ini(&content),
                 "filezilla" => import::from_filezilla_xml(&content)?,
                 "json" => import::from_json(&content)?,
                 f => return Err(RpcError::new("invalid_input", format!("unknown import format {f}"))),
@@ -305,6 +304,9 @@ pub async fn dispatch(state: &Arc<AppState>, origin: &Origin, method: &str, para
         "fs.dirSize" => ok(fs::dir_size(st, parse(params)?).await?),
         "fs.diskInfo" => ok(fs::disk_info(st, parse(params)?).await?),
         "fs.exec" => ok(fs::exec(st, origin, parse(params)?).await?),
+
+        // ---------------------------------------------------------- compare before copying
+        "compare.pairs" => ok(compare::pairs(st, parse(params)?).await?),
 
         // ---------------------------------------------------------- archives
         "archive.extract" => ok(jobs::archive_extract(st, parse(params)?)?),
@@ -509,6 +511,8 @@ pub async fn dispatch(state: &Arc<AppState>, origin: &Origin, method: &str, para
             ok(edit::external(st, &p.session, &p.path).await?)
         }
         "edit.list" => ok(edit::list(st)),
+        "edit.formatters" => ok(tokio::task::spawn_blocking(format::available).await.map_err(Error::from)?),
+        "edit.format" => ok(format::format(parse(params)?).await?),
         "edit.stop" => {
             let p: Id = parse(params)?;
             edit::stop(st, &p.id)?;

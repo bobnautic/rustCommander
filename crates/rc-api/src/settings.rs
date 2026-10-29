@@ -48,12 +48,26 @@ impl Default for ServerSettings {
 pub struct EditorSettings {
     pub font_size: u32,
     pub word_wrap: bool,
+    /// Indentation width for new files (existing files keep the one they use).
     pub tab_size: u32,
+    /// Show syntax errors and other problems while typing.
+    pub lint: bool,
+    /// Run the formatter of the file's language before saving.
+    pub format_on_save: bool,
+    /// Line width the formatters aim for.
+    pub print_width: u32,
 }
 
 impl Default for EditorSettings {
     fn default() -> Self {
-        EditorSettings { font_size: 13, word_wrap: false, tab_size: 4 }
+        EditorSettings {
+            font_size: 13,
+            word_wrap: false,
+            tab_size: 4,
+            lint: true,
+            format_on_save: false,
+            print_width: 80,
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 import {
   Archive, ClipboardCopy, Copy, Download, Edit3, ExternalLink, Eye, FilePlus, FolderInput, FolderOpen, FolderPlus, Hash, Info,
-  Link2, ListChecks, MoveRight, PackageOpen, Pencil, RefreshCw, SquareTerminal, Trash2, Upload, Command, Settings2, Globe,
+  Link2, ListChecks, MoveRight, PackageOpen, Pencil, RefreshCw, SquareTerminal, Trash2, Upload, Command, Settings2, Globe, Fingerprint, GitCompare,
 } from 'lucide-react';
 import type { FileEntry } from '../../api/types';
 import { tr } from '../../i18n';
@@ -77,6 +77,8 @@ export function buildPanelMenu(side: Side, entry: FileEntry | null): MenuItem[] 
     { label: multi ? tr('ops.copyPaths') : tr('ops.copyPath'), icon: ClipboardCopy, onClick: () => ops.copyPaths(side) },
     { label: tr('ops.copyUrl'), icon: Link2, hidden: multi, onClick: () => void ops.copyUrl(side) },
     { label: tr('ops.checksum'), icon: Hash, hidden: !file || multi, onClick: () => ops.showChecksum(side) },
+    { label: tr('fp.menu'), icon: Fingerprint, shortcut: 'Ctrl+K', onClick: () => ops.compareFingerprints(side) },
+    { label: tr('diff.menu'), icon: GitCompare, hidden: !file || multi, onClick: () => ops.diffWithOtherPanel(side) },
     { label: tr('ops.openTerminalHere'), icon: SquareTerminal, hidden: !info?.features.terminal, onClick: () => ops.openTerminalHere(side) },
     { label: tr('commands.title'), icon: Command, submenu: commandsSubmenu(side) },
     {

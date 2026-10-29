@@ -1,6 +1,6 @@
 [package]
 name = "rust-commander"
-description = "Rust Commander — a WinSCP-style file manager for SFTP, SCP, FTP(S), WebDAV, S3 and more"
+description = "Rust Commander — a dual-pane file manager for SFTP, SCP, FTP(S), WebDAV, S3 and more"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

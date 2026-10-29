@@ -3,7 +3,7 @@ import {
   ArrowLeftRight, Bookmark, CircleHelp, Columns2, Copy, Download, Edit3, Eye, EyeOff, FilePlus, FolderInput, FolderPlus, FolderSync,
   GitCompareArrows, Hash, Info, Keyboard, Link2, ListChecks, Lock, LogOut, Menu as MenuIcon, Monitor, Moon, MoveRight, Network,
   PanelBottom, PanelLeft, Pencil, Plus, RefreshCw, Search, Settings, Share2, SquareTerminal, Sun, SunMoon, Trash2, Unplug, Upload,
-  Command, Archive, ArrowDownUp, Radar, ClipboardCopy, FolderOpen, Route, Repeat, FolderTree,
+  Command, Archive, ArrowDownUp, Radar, ClipboardCopy, FolderOpen, Route, Repeat, FolderTree, Fingerprint, GitCompare, FileSearch,
 } from 'lucide-react';
 import { call, mode, webLogout } from '../api/client';
 import { tr, useT, type TFn } from '../i18n';
@@ -69,6 +69,7 @@ export function buildMenus(t: TFn): { id: string; label: string; items: () => Me
           { label: t('ops.open'), icon: FolderOpen, shortcut: 'Enter', onClick: () => ops.openFocused(side) },
           { label: t('ops.edit'), icon: Edit3, shortcut: 'F4', onClick: () => ops.editFocused(side) },
           { label: t('ops.view'), icon: Eye, shortcut: 'F3', onClick: () => ops.viewFocused(side) },
+          { label: t('openFile.menu'), icon: FileSearch, shortcut: k('Ctrl+P'), onClick: () => ops.openFileDialog(), testId: 'menu-open-file' },
           { separator: true },
           { label: t('ops.copy'), icon: Copy, shortcut: 'F5', onClick: () => ops.copySelection(side, false) },
           { label: t('ops.move'), icon: MoveRight, shortcut: 'F6', onClick: () => ops.copySelection(side, true) },
@@ -101,6 +102,8 @@ export function buildMenus(t: TFn): { id: string; label: string; items: () => Me
           { label: t('sync.title'), icon: FolderSync, shortcut: k('Ctrl+Shift+S'), onClick: () => ops.synchronize(), testId: 'menu-sync' },
           { label: t('watch.title'), icon: Radar, onClick: () => openDialog('keepUpToDate', {}) },
           { label: comparing ? t('compare.clear') : t('compare.title'), icon: GitCompareArrows, onClick: () => (comparing ? clearCompare() : runCompare()) },
+          { label: t('fp.menu'), icon: Fingerprint, shortcut: k('Ctrl+K'), onClick: () => ops.compareFingerprints(side), testId: 'menu-fingerprints' },
+          { label: t('diff.menu'), icon: GitCompare, onClick: () => ops.diffWithOtherPanel(side) },
           { label: t('panel.syncBrowse'), icon: ArrowLeftRight, checked: st.syncBrowse, onClick: () => setLayout({ syncBrowse: !st.syncBrowse }) },
           { separator: true },
           { label: t('terminal.open'), icon: SquareTerminal, shortcut: k('Ctrl+T'), hidden: !st.info?.features.terminal, onClick: () => ops.openTerminalHere(side) },
