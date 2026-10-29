@@ -38,6 +38,8 @@ struct Auth<'a> {
     rsa_hash: Option<Option<HashAlg>>,
     password: Option<String>,
     cancelled: bool,
+    /// Why the configured key could not be used (reported if authentication fails).
+    key_error: Option<String>,
 }
 
 pub(super) async fn authenticate(
@@ -71,6 +73,7 @@ pub(super) async fn authenticate(
         rsa_hash: None,
         password: site.password.clone().filter(|p| !p.is_empty()),
         cancelled: false,
+        key_error: None,
     };
     if a.run(site).await? {
         return Ok(user);
@@ -83,6 +86,9 @@ pub(super) async fn authenticate(
     if let Some(allowed) = &a.allowed {
         let names: Vec<&str> = allowed.iter().map(<&str>::from).collect();
         msg.push_str(&format!(" (server allows: {})", names.join(", ")));
+    }
+    if let Some(k) = &a.key_error {
+        msg.push_str(&format!("; {k}"));
     }
     Err(Error::AuthFailed(msg))
 }
@@ -278,6 +284,7 @@ impl Auth<'_> {
                 Ok(s) => (s, p.clone()),
                 Err(e) => {
                     tracing::warn!(session = %self.ctx.session_id, "cannot read private key {p}: {e}");
+                    self.key_error = Some(format!("cannot read private key {p}: {e}"));
                     return None;
                 }
             }
@@ -287,6 +294,7 @@ impl Auth<'_> {
             Err(e) if looks_encrypted(&content, &e) => true,
             Err(e) => {
                 tracing::warn!(session = %self.ctx.session_id, "cannot load private key {label}: {e}");
+                self.key_error = Some(format!("cannot load private key {label}: {e}"));
                 false
             }
         };

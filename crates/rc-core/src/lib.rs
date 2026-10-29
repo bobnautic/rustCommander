@@ -37,5 +37,11 @@ pub use site::SiteConfig;
 pub use types::*;
 pub use vfs::*;
 
+/// Install ring as the process-wide rustls crypto provider. HTTP clients (reqwest is built
+/// without a provider) need it; call once at startup. Repeated calls are harmless.
+pub fn init_tls() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 /// Version of Rust Commander.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

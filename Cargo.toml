@@ -15,7 +15,7 @@ edition = "2021"
 license = "MIT"
 authors = ["Rust Commander contributors"]
 repository = "https://github.com/bobnautic/rustcommander"
-rust-version = "1.80"
+rust-version = "1.91"
 
 [workspace.dependencies]
 rc-core = { path = "crates/rc-core" }
@@ -48,7 +48,7 @@ dirs = "6"
 globset = "0.4"
 regex = "1"
 clap = { version = "4", features = ["derive", "env"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "stream", "json", "query"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging", "tls12"] }
 
 [profile.release]

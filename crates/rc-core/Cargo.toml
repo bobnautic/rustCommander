@@ -10,9 +10,11 @@ default = ["ssh", "ftp", "cloud"]
 # SFTP / SCP / SSH terminal / tunnels (russh)
 ssh = ["dep:russh", "dep:russh-sftp"]
 # FTP / FTPS (suppaftp)
-ftp = []
+ftp = ["dep:suppaftp", "tls"]
 # WebDAV / S3 / Azure Blob / Google Cloud Storage (OpenDAL)
-cloud = []
+cloud = ["dep:opendal", "dep:opendal-http-transport-reqwest", "dep:hmac", "tls"]
+# Shared TLS certificate verification (trust on first use) for FTPS / HTTPS backends.
+tls = ["dep:webpki-roots", "dep:rustls-native-certs", "dep:x509-cert"]
 
 [dependencies]
 tokio.workspace = true
@@ -47,14 +49,38 @@ argon2 = "0.5"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tar = "0.4"
 flate2 = "1"
-reqwest.workspace = true
+# HTTP(S) for the Rust Commander peer protocol and (via OpenDAL) the cloud backends.
+# 0.13 is what OpenDAL's HTTP transport is built on; TLS uses the ring provider.
+reqwest = { workspace = true, features = ["socks"] }
 rustls.workspace = true
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 russh = { version = "0.65", default-features = false, features = ["flate2", "ring", "rsa"], optional = true }
 russh-sftp = { version = "3.0.1", optional = true }
+
+# TLS (ftp, cloud)
+webpki-roots = { version = "1", optional = true }
+rustls-native-certs = { version = "0.8", optional = true }
+x509-cert = { version = "0.2", default-features = false, optional = true }
+
+# FTP / FTPS
+# `deprecated` enables implicit FTPS (`connect_secure_implicit`).
+suppaftp = { version = "12.2", default-features = false, features = ["tokio", "tokio-rustls-ring", "deprecated"], optional = true }
+
+# WebDAV / S3 / Azure / GCS
+opendal = { version = "0.59", default-features = false, features = [
+    "executors-tokio",
+    "layers-retry",
+    "services-webdav",
+    "services-s3",
+    "services-azblob",
+    "services-gcs",
+], optional = true }
+opendal-http-transport-reqwest = { version = "0.59", default-features = false, features = ["rustls-no-provider"], optional = true }
+hmac = { version = "0.12", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
+tracing-subscriber.workspace = true

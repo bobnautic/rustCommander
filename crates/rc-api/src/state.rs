@@ -176,6 +176,7 @@ pub fn username() -> String {
 
 impl AppState {
     pub async fn new(opts: InitOptions) -> Result<Arc<AppState>> {
+        rc_core::init_tls();
         let config_dir = opts.config_dir.unwrap_or_else(store::config_dir);
         std::fs::create_dir_all(&config_dir).map_err(|e| Error::io_at(e, &config_dir.display().to_string()))?;
         let events = EventBus::new();

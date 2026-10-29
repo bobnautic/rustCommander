@@ -87,6 +87,7 @@ enum Command {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    rc_core::init_tls();
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
     rt.block_on(run(cli))
 }
