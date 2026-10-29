@@ -1,0 +1,19 @@
+[book]
+title = "Rust Commander"
+description = "Two-panel file manager and transfer client for SFTP, SCP, FTP/FTPS, WebDAV, S3, Azure and Google Cloud Storage — on the desktop and in the browser."
+authors = ["Rust Commander contributors"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/bobnautic/rustcommander"
+edit-url-template = "https://github.com/bobnautic/rustcommander/edit/main/docs/src/{path}"
+
+[output.html.search]
+enable = true
