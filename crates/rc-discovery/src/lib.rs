@@ -585,7 +585,8 @@ pub async fn scan(port: u16, wait: Duration) -> std::io::Result<Vec<Peer>> {
     Ok(peers)
 }
 
-#[cfg(test)]
+// Relies on broadcast/multicast loopback, which CI runners outside Linux don't provide.
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
 
