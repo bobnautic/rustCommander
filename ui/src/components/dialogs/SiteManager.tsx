@@ -1066,7 +1066,6 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: (n: nu
       <Field label={t('site.importFormat')}>
         <Select value={format} onChange={(e) => setFormat(e.target.value as ImportFormat)}>
           <option value="openssh">{t('import.openssh')}</option>
-          <option value="winscp">{t('import.winscp')}</option>
           <option value="filezilla">{t('import.filezilla')}</option>
           <option value="json">{t('import.json')}</option>
         </Select>

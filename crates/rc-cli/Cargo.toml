@@ -1,6 +1,6 @@
 [package]
 name = "rc-cli"
-description = "rcmd: headless Rust Commander server, LAN discovery and WinSCP-style scripting"
+description = "rcmd: headless Rust Commander server, LAN discovery and batch scripting"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

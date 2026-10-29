@@ -6,7 +6,7 @@ use async_trait::async_trait;
 
 use rc_core::prompt::{HostKeyState, PromptRequest, PromptResponse, Prompter};
 
-/// Asks on the terminal. `hostkey` mirrors WinSCP's `-hostkey=` switch: `*` accepts any
+/// Asks on the terminal. `hostkey` is the `-hostkey=` switch of `open`: `*` accepts any
 /// key, a fingerprint accepts exactly that key.
 pub struct CliPrompter {
     pub interactive: bool,

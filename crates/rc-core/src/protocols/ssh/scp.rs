@@ -1,4 +1,4 @@
-//! SCP mode (WinSCP's "SCP" protocol): file operations through shell commands and file
+//! SCP mode: file operations through shell commands and file
 //! transfers through the classic `scp -f` / `scp -t` protocol.
 
 use std::collections::HashMap;

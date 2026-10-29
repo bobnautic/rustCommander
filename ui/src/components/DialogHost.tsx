@@ -34,6 +34,9 @@ const registry: Registry = {
   symlink: lazy(() => small().then((m) => ({ default: m.SymlinkDialog }))),
   sessionInfo: lazy(() => small().then((m) => ({ default: m.SessionInfoDialog }))),
   shortcuts: lazy(() => small().then((m) => ({ default: m.ShortcutsDialog }))),
+  diff: lazy(() => import('./dialogs/DiffDialog')),
+  fingerprint: lazy(() => import('./dialogs/FingerprintDialog')),
+  openFile: lazy(() => import('./dialogs/OpenFileDialog')),
 };
 
 export function DialogHost() {

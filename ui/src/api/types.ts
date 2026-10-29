@@ -112,7 +112,7 @@ export interface SiteConfig {
   proxy: { kind: ProxyKind; host: string; port: number; username: string; password?: string | null };
 }
 
-export type ImportFormat = 'openssh' | 'winscp' | 'filezilla' | 'json';
+export type ImportFormat = 'openssh' | 'filezilla' | 'json';
 
 // ---------------------------------------------------------------- sessions
 
@@ -159,9 +159,27 @@ export interface ExplorerTarget {
 /** The beginning of a file, read into memory only (nothing is stored or copied). */
 export interface FilePreview { path: string; content: string; size: number; binary: boolean; truncated: boolean }
 
+// ---------------------------------------------------------------- compare before copying
+
+/** A source file and the file a copy would write (or overwrite) at the target. */
+export interface FilePair {
+  /** Path below the target directory, e.g. 'site/css/main.css'. */
+  rel: string;
+  source: FileEntry;
+  targetPath: string;
+  /** What exists at targetPath today; null = the copy creates it. */
+  target?: FileEntry | null;
+}
+
+// ---------------------------------------------------------------- editor
+
+/** A code formatter installed on the machine running Rust Commander. */
+export interface FormatterInfo { id: string; languages: string[]; path: string }
+
 // ---------------------------------------------------------------- transfers & jobs
 
-export type OverwriteMode = 'ask' | 'overwrite' | 'skip' | 'newer' | 'differentSize' | 'resume' | 'rename';
+/** 'differentChecksum': overwrite only when the content differs (SHA-256 of both sides). */
+export type OverwriteMode = 'ask' | 'overwrite' | 'skip' | 'newer' | 'differentSize' | 'differentChecksum' | 'resume' | 'rename';
 export type TransferMode = 'binary' | 'text' | 'auto';
 
 export interface TransferOptions {
@@ -176,7 +194,7 @@ export interface TransferOptions {
   mode: TransferMode;
   /** Masks treated as text in 'auto' mode, e.g. '*.txt; *.html; *.php'. */
   textMasks: string;
-  /** WinSCP-style file mask: '*.jpg; *.png | thumbs/; *.tmp'  (include | exclude, dirs end with '/'). */
+  /** File mask: '*.jpg; *.png | thumbs/; *.tmp'  (include | exclude, dirs end with '/'). */
   fileMask: string;
   excludeHidden: boolean;
   /** Bytes per second, 0 = unlimited. */
@@ -404,7 +422,7 @@ export interface Settings {
   transfer: TransferOptions;
   discovery: { enabled: boolean; port: number; instanceName: string; intervalSecs: number };
   server: { autoStart: boolean; bind: string; port: number; tls: boolean; allowTerminal: boolean };
-  editor: { fontSize: number; wordWrap: boolean; tabSize: number };
+  editor: { fontSize: number; wordWrap: boolean; tabSize: number; lint: boolean; formatOnSave: boolean; printWidth: number };
   terminal: { fontSize: number; fontFamily: string; scrollback: number };
 }
 
@@ -514,6 +532,9 @@ export interface RpcMethods {
   'fs.diskInfo': [{ session: string; path: string }, DiskInfo | null];
   'fs.exec': [{ session: string; command: string; cwd?: string | null }, ExecOutput];
 
+  /** Source files (directories walked) with their counterparts below `dstDir`, without reading any content. */
+  'compare.pairs': [{ srcSession: string; srcPaths: string[]; dstSession: string; dstDir: string; newName?: string | null; fileMask?: string; excludeHidden?: boolean; maxFiles?: number }, { pairs: FilePair[]; truncated: boolean }];
+
   /** Local sessions only. */
   'archive.extract': [{ session: string; path: string; dstDir: string }, Job];
   'archive.create': [{ session: string; paths: string[]; dst: string; format: 'zip' | 'tar' | 'tar.gz' }, Job];
@@ -566,6 +587,10 @@ export interface RpcMethods {
   /** Desktop only: download to a temp file, open with the system editor, upload on save. */
   'edit.external': [{ session: string; path: string }, ExternalEdit];
   'edit.list': [Empty, ExternalEdit[]];
+  /** Formatters installed on the host (rustfmt, gofmt, ruff, black, shfmt, clang-format, taplo, stylua). */
+  'edit.formatters': [Empty, FormatterInfo[]];
+  /** Format text with the host's formatter for `language`; fails with the formatter's message on syntax errors. */
+  'edit.format': [{ language: string; fileName: string; content: string; tabSize: number; useTabs: boolean }, { content: string; formatter: string }];
   'edit.stop': [{ id: string }, null];
 
   'knownHosts.list': [Empty, KnownHost[]];

@@ -24,6 +24,7 @@ sha2.workspace = true
 hex.workspace = true
 rand.workspace = true
 reqwest.workspace = true
+directories.workspace = true
 argon2 = "0.5"
 gethostname = "1"
 open = "5"

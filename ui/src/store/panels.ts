@@ -389,7 +389,7 @@ export function remoteSide(): Side {
   return 'right';
 }
 
-/** Show a freshly opened session (WinSCP behaviour: remote in the right panel, site's local dir in the left). */
+/** Show a freshly opened session: remote in the right panel, the site's local dir in the left. */
 export async function showNewSession(s: SessionSummary) {
   const side = remoteSide();
   await navigate(side, s.id, s.initialDir || s.home || '/', { select: null });

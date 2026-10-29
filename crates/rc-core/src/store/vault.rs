@@ -1,7 +1,7 @@
 //! Encryption of stored secrets (passwords, passphrases, keys).
 //!
 //! Without a master password a random key is kept in `vault.key` (readable only by the
-//! user) — this protects the site file when it is copied or shared, like WinSCP's default.
+//! user) — this protects the site file when it is copied or shared.
 //! With a master password the key is derived with Argon2id and the vault starts locked.
 
 use std::path::PathBuf;

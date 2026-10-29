@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Copy, MoveRight, Folder, File as FileIcon } from 'lucide-react';
+import { Copy, MoveRight, Folder, File as FileIcon, Fingerprint } from 'lucide-react';
 import type { TransferOptions } from '../../api/types';
 import { call } from '../../api/client';
 import { useT } from '../../i18n';
@@ -8,11 +8,11 @@ import { formatBytes } from '../../lib/format';
 import { load, save } from '../../lib/storage';
 import * as P from '../../lib/paths';
 import { saveSettings, sessionById, setLayout, useApp } from '../../store/app';
-import type { CopyProps } from '../../store/dialogs';
+import { openDialog, type CopyProps } from '../../store/dialogs';
 import { setSkipCopyDialog } from '../../actions/fileOps';
 import { selectNone, getPanel } from '../../store/panels';
 import { toast } from '../../store/toasts';
-import { Checkbox, Collapsible, Dialog, DialogButtons, Field, TextInput } from '../ui';
+import { Button, Checkbox, Collapsible, Dialog, DialogButtons, Field, TextInput } from '../ui';
 import { summarizeOptions, TransferOptionsForm } from './common';
 import { SessionDot } from '../panel/Panel';
 
@@ -77,6 +77,19 @@ export default function CopyDialog({ props, close }: { props: CopyProps; close: 
     }
   };
 
+  const compareFingerprints = () => {
+    if (sameTarget) return toast.warning(t('copy.sameTarget'));
+    openDialog('fingerprint', {
+      srcSession: props.srcSession,
+      srcPaths: props.entries.map((e) => e.path),
+      dstSession: props.dstSession,
+      dstDir: P.normalize(dstDir),
+      newName: single && newName.trim() && newName.trim() !== props.entries[0].name ? newName.trim() : null,
+      options: { ...(opts ?? {}), move },
+      onCopied: close,
+    });
+  };
+
   const what = single
     ? props.entries[0].name
     : t('copy.items', { n: props.entries.length });
@@ -94,7 +107,14 @@ export default function CopyDialog({ props, close }: { props: CopyProps; close: 
           okLabel={move ? t('ops.move') : t('ops.copy')}
           busy={busy}
           okDisabled={!opts}
-          extra={<Checkbox label={t('copy.skipDialog')} checked={skip} onChange={setSkip} title={t('copy.skipHint')} />}
+          extra={
+            <>
+              <Button size="sm" icon={Fingerprint} onClick={compareFingerprints} title={t('fp.copyHint')} data-testid="copy-fingerprints">
+                {t('fp.compare')}
+              </Button>
+              <Checkbox label={t('copy.skipDialog')} checked={skip} onChange={setSkip} title={t('copy.skipHint')} />
+            </>
+          }
         />
       }
     >

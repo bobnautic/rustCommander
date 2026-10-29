@@ -23,6 +23,9 @@ pub enum OverwriteMode {
     Skip,
     Newer,
     DifferentSize,
+    /// Overwrite only when the content differs (SHA-256 of both sides, computed on the
+    /// servers where the protocol allows it).
+    DifferentChecksum,
     Resume,
     Rename,
 }
@@ -295,6 +298,22 @@ impl TransferTask {
         }
     }
 
+    /// Same SHA-256 on both sides. A checksum that cannot be computed counts as different.
+    async fn same_content(&self, src: &FileEntry, target: &FileEntry) -> Result<bool> {
+        let (a, b) = tokio::join!(
+            ops::checksum(self.src.vfs.as_ref(), &src.path, ChecksumAlgo::Sha256),
+            ops::checksum(self.dst.vfs.as_ref(), &target.path, ChecksumAlgo::Sha256)
+        );
+        match (a, b) {
+            (Ok(a), Ok(b)) => Ok(a == b),
+            (Err(Error::Cancelled), _) | (_, Err(Error::Cancelled)) => Err(Error::Cancelled),
+            (Err(e), _) | (_, Err(e)) => {
+                tracing::debug!("checksum of {} for comparison failed: {e}", src.path);
+                Ok(false)
+            }
+        }
+    }
+
     async fn decide(&self, ctx: &JobCtx, src: &FileEntry, target: &FileEntry) -> Result<Decision> {
         let opts = &self.options;
         let mut mode = opts.overwrite;
@@ -324,6 +343,13 @@ impl TransferTask {
             },
             OverwriteMode::DifferentSize => {
                 if src.size != target.size {
+                    Decision::Write { path: target.path.clone(), offset: 0 }
+                } else {
+                    Decision::Skip
+                }
+            }
+            OverwriteMode::DifferentChecksum => {
+                if src.size != target.size || target.is_dir() || !self.same_content(src, target).await? {
                     Decision::Write { path: target.path.clone(), offset: 0 }
                 } else {
                     Decision::Skip
@@ -747,6 +773,36 @@ mod tests {
         let job = q.submit(JobKind::Delete, JobSpec::default(), Arc::new(task), 0);
         assert_eq!(q.wait(&job.id).await.unwrap().state, JobState::Completed);
         assert!(vfs.try_stat(&vpath::join(&base, "dst/src")).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn overwrite_only_changed_content() {
+        let (_d, base, vfs) = setup().await;
+        // dst/src/a.txt: same content; sub/b.txt: same size, other content; sub/c.log: missing
+        for (p, c) in [("dst/src/a.txt", "aaa"), ("dst/src/sub/b.txt", "BBBB")] {
+            let full = vpath::join(&base, p);
+            vfs.mkdir_all(&vpath::parent(&full)).await.unwrap();
+            write_all(vfs.as_ref(), &full, c.as_bytes()).await.unwrap();
+        }
+        let a = vpath::join(&base, "dst/src/a.txt");
+        vfs.set_modified(&a, 1_000_000).await.unwrap();
+        let q = queue();
+        let ep = Endpoint::new("local", vfs.clone());
+        let task = TransferTask {
+            src: ep.clone(),
+            src_paths: vec![vpath::join(&base, "src")],
+            dst: ep,
+            dst_dir: vpath::join(&base, "dst"),
+            options: TransferOptions { overwrite: OverwriteMode::DifferentChecksum, ..Default::default() },
+        };
+        let job = q.submit(JobKind::Transfer, JobSpec::default(), Arc::new(task), 0);
+        let done = q.wait(&job.id).await.unwrap();
+        assert_eq!(done.state, JobState::Completed, "{:?}", done.errors);
+        // the identical file was skipped (its old timestamp proves it was not rewritten)
+        assert_eq!(vfs.stat(&a).await.unwrap().modified, Some(1_000_000));
+        let b = read_to_end(vfs.as_ref(), &vpath::join(&base, "dst/src/sub/b.txt"), 100).await.unwrap();
+        assert_eq!(b, b"bbbb");
+        assert!(vfs.try_stat(&vpath::join(&base, "dst/src/sub/c.log")).await.unwrap().is_some());
     }
 
     #[tokio::test]

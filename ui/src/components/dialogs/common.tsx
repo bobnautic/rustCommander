@@ -107,7 +107,7 @@ export function combinePerms(values: (number | null | undefined)[]): PermState {
 
 // ---------------------------------------------------------------- transfer options
 
-const OVERWRITE: OverwriteMode[] = ['ask', 'overwrite', 'skip', 'newer', 'differentSize', 'resume', 'rename'];
+const OVERWRITE: OverwriteMode[] = ['ask', 'overwrite', 'skip', 'newer', 'differentSize', 'differentChecksum', 'resume', 'rename'];
 
 export function TransferOptionsForm({ value, onChange, upload }: { value: TransferOptions; onChange: (v: TransferOptions) => void; upload?: boolean }) {
   const t = useT();

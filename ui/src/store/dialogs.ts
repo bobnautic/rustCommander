@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ExecOutput, FileEntry, Peer, SiteConfig, SyncPlan } from '../api/types';
+import type { ExecOutput, FileEntry, Peer, SiteConfig, SyncPlan, TransferOptions } from '../api/types';
 import type { Side } from './panels';
 
 export interface ConfirmProps {
@@ -10,6 +10,8 @@ export interface ConfirmProps {
   cancelLabel?: string;
   danger?: boolean;
   checkbox?: { label: string; checked: boolean };
+  /** A third button: runs `onClick`, then closes the dialog like Cancel. */
+  alt?: { label: string; onClick: () => void };
   resolve: (ok: boolean, checked: boolean) => void;
 }
 
@@ -34,6 +36,28 @@ export interface CopyProps {
   dstDir: string;
   move: boolean;
   srcSide?: Side;
+}
+
+/** One side of a comparison: a file in a session, or text (e.g. the editor's content). */
+export interface DiffSide {
+  label: string;
+  /** For syntax highlighting. */
+  fileName: string;
+  session?: string;
+  path?: string;
+  text?: string;
+}
+
+export interface FingerprintProps {
+  srcSession: string;
+  srcPaths: string[];
+  dstSession: string;
+  dstDir: string;
+  newName?: string | null;
+  /** Transfer options of the copy (mask, hidden files, ...) for "copy changed files". */
+  options?: Partial<TransferOptions>;
+  /** Called after a copy was started from the dialog (the copy dialog closes itself then). */
+  onCopied?: () => void;
 }
 
 export interface DialogPropsMap {
@@ -61,6 +85,10 @@ export interface DialogPropsMap {
   symlink: { session: string; dir: string; target?: string };
   sessionInfo: { sessionId: string };
   shortcuts: Record<string, never>;
+  /** `top`: above top-layer dialogs (e.g. opened from the overwrite question). */
+  diff: { left: DiffSide; right: DiffSide; title?: string; top?: boolean };
+  fingerprint: FingerprintProps;
+  openFile: { session?: string; dir?: string };
 }
 
 export type DialogKind = keyof DialogPropsMap;

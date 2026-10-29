@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import {
-  ChevronDown, ChevronRight, Copy, Eye, FolderInput, FolderTree, Info, Loader2, MoreHorizontal, Pencil, Plug, RefreshCw, Route, Server,
+  ChevronDown, ChevronRight, Copy, Edit3, Eye, FileCode, FolderInput, FolderTree, Info, Loader2, MoreHorizontal, Pencil, Plug, RefreshCw, Route, Server,
   ShieldCheck, SquareTerminal, Trash2, Unplug, X,
 } from 'lucide-react';
 import type { FileEntry, SessionSummary } from '../api/types';
@@ -20,6 +20,7 @@ import { navigate, remoteSide } from '../store/panels';
 import { openTerminal } from '../store/terminals';
 import { closeSession, openSiteManager, showSessionInfo } from '../actions/sessions';
 import { copyText } from '../actions/fileOps';
+import { openFile } from '../store/editors';
 import { showContextMenu, type MenuItem } from './Menu';
 import { SessionDot } from './panel/Panel';
 import { typeLabel } from './panel/FileTable';
@@ -121,6 +122,12 @@ function openInPanel(session: string, entry: FileEntry) {
   if (useApp.getState().narrow) setLayout({ sidebarOpen: false });
 }
 
+/** The file in the editor window: read and saved through the explorer's SSH connection. */
+function openInEditor(session: string, entry: FileEntry, mode: 'edit' | 'view') {
+  if (useApp.getState().narrow) setLayout({ sidebarOpen: false });
+  void openFile(session, entry, mode);
+}
+
 function canTerminal(s: SessionSummary | undefined): boolean {
   return !!s?.capabilities.terminal && !!useApp.getState().info?.features.terminal;
 }
@@ -155,6 +162,8 @@ function entryMenu(r: Extract<Row, { kind: 'entry' }>, t: TFn): MenuItem[] {
     r.dir
       ? { label: r.open ? t('common.collapse') : t('common.expand'), icon: r.open ? ChevronDown : ChevronRight, onClick: () => toggleDir(r.key, r.session, r.entry.path) }
       : { label: t('explorer.preview'), icon: Eye, onClick: () => preview(r) },
+    { label: t('explorer.openInEditor'), icon: Edit3, hidden: r.dir, onClick: () => openInEditor(r.session, r.entry, 'edit') },
+    { label: t('explorer.openInViewer'), icon: FileCode, hidden: r.dir, onClick: () => openInEditor(r.session, r.entry, 'view') },
     { label: t('explorer.openInPanel'), icon: FolderInput, onClick: () => openInPanel(r.session, r.entry) },
     { label: t('explorer.terminalHere'), icon: SquareTerminal, hidden: !r.dir || !canTerminal(s), onClick: () => void openTerminal(r.session, r.entry.path) },
     { separator: true },
@@ -277,6 +286,9 @@ const EntryRow = memo(function EntryRow({ r, focused, selected, id, home }: { r:
         setFocus(r.key);
         activate(r);
       }}
+      onDoubleClick={() => {
+        if (!r.dir) openInEditor(r.session, e, 'edit');
+      }}
       onContextMenu={(ev: MouseEvent) => {
         ev.preventDefault();
         setFocus(r.key);
@@ -343,6 +355,11 @@ function Details({ sessions }: { sessions: SessionSummary[] }) {
         {!dir && (
           <Button size="sm" icon={Eye} onClick={() => void loadPreview(sel.session, e.path, true)} data-testid="xp-preview-btn">
             {t('explorer.preview')}
+          </Button>
+        )}
+        {!dir && (
+          <Button size="sm" icon={Edit3} onClick={() => openInEditor(sel.session, e, 'edit')} data-testid="xp-edit-btn">
+            {t('explorer.edit')}
           </Button>
         )}
         <Button size="sm" icon={FolderInput} onClick={() => openInPanel(sel.session, e)}>
@@ -451,6 +468,9 @@ export function RemoteExplorer() {
         break;
       case 'Enter':
         if (cur) activate(cur);
+        break;
+      case 'F4':
+        if (cur?.kind === 'entry' && !cur.dir) openInEditor(cur.session, cur.entry, 'edit');
         break;
       case ' ':
         if (cur?.kind === 'entry') select(cur);

@@ -274,7 +274,7 @@ function buildLocalFs(): MemFs {
           file('known_hosts', TEXT.knownHosts, { perm: 0o600 }),
         ], { perm: 0o700 }),
         dir('.config', [dir('rcmd', [file('settings.json', '{\n  "theme": "system"\n}\n')])]),
-        dir('Desktop', [file('todo.txt', TEXT.todo, { age: 3600 * 20 })]),
+        dir('Desktop', [file('todo.txt', TEXT.todo, { age: 3600 * 20 }), file('servers.json', '{\n  "web": { "host": "web.example.com", "port": 22 },\n  "db": { "host": "db.example.com", "port": 5432 },\n  "web": { "host": "web2.example.com" },\n}\n', { age: 3600 * 2 })]),
         dir('Documents', [
           file('Invoice-2026-0142.pdf', 184_220),
           file('Quarterly report Q3.docx', 1_288_002),
@@ -301,7 +301,7 @@ function buildLocalFs(): MemFs {
           dir('rust-commander', [
             file('Cargo.toml', TEXT.cargoToml, { age: 3600 * 8 }),
             dir('src', [file('main.rs', TEXT.mainRs, { age: 3600 }), file('lib.rs', TEXT.libRs, { age: 3600 * 4 })]),
-            file('README.md', '# Rust Commander\n\nA WinSCP-style file manager written in Rust.\n'),
+            file('README.md', '# Rust Commander\n\nA dual-pane file manager written in Rust.\n'),
             dir('target', [file('.rustc_info.json', '{}\n')]),
           ]),
           link('current-site', '/home/demo/projects/website', 'dir'),
@@ -444,7 +444,7 @@ function defaultSettings(): T.Settings {
     transfer: defaultTransfer(),
     discovery: { enabled: true, port: 8823, instanceName: 'demo-workstation', intervalSecs: 30 },
     server: { autoStart: false, bind: '0.0.0.0', port: 8822, tls: true, allowTerminal: true },
-    editor: { fontSize: 13, wordWrap: false, tabSize: 4 },
+    editor: { fontSize: 13, wordWrap: false, tabSize: 4, lint: true, formatOnSave: false, printWidth: 80 },
     terminal: { fontSize: 13, fontFamily: 'ui-monospace, "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace', scrollback: 5000 },
   };
 }
@@ -1157,6 +1157,8 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
         return s.node.modified > existing.modified ? 'overwrite' : 'skip';
       case 'differentSize':
         return s.node.size !== existing.size ? 'overwrite' : 'skip';
+      case 'differentChecksum':
+        return s.node.size !== existing.size || contentKey(s.node) !== contentKey(existing) ? 'overwrite' : 'skip';
       case 'resume':
         return existing.size < s.size ? 'resume' : 'overwrite';
       case 'rename':
@@ -1567,6 +1569,11 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
     }
   }, fast ? 300 : 4000);
 
+  /** What the fake checksums are computed from. */
+  function contentKey(n: MNode): string {
+    return n.content ?? n.svg ?? `${n.name}:${n.size}`;
+  }
+
   async function sha(algo: 'SHA-1' | 'SHA-256', data: string): Promise<string> {
     try {
       const buf = await crypto.subtle.digest(algo, enc.encode(data));
@@ -1733,7 +1740,7 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
         for (const x of list as Partial<T.SiteConfig>[]) imported.push({ ...siteTemplate(x.protocol ?? 'sftp'), ...x, id: newId('site-'), folder: x.folder || 'Imported' } as T.SiteConfig);
       } else {
         if (!content.trim()) fail('invalid_input', 'Nothing to import');
-        const folder = format === 'winscp' ? 'Imported/WinSCP' : 'Imported/FileZilla';
+        const folder = 'Imported/FileZilla';
         imported.push({ ...siteTemplate('sftp'), id: newId('site-'), name: 'legacy-server', folder, host: 'legacy.example.com', username: 'admin' });
         imported.push({ ...siteTemplate('ftp'), id: newId('site-'), name: 'old-ftp', folder, host: 'ftp.legacy.example.com', username: 'upload' });
       }
@@ -1946,7 +1953,7 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
       const n = fsys.must(path);
       if (n.kind === 'dir') fail('is_a_directory', 'Checksums can only be computed for files');
       await sleep(Math.min(1500, 200 + n.size / 2e6));
-      const data = n.content ?? n.svg ?? `${n.name}:${n.size}`;
+      const data = contentKey(n);
       const algo = p.algo as T.ChecksumAlgo;
       if (algo === 'sha256') return sha('SHA-256', data);
       if (algo === 'sha1') return sha('SHA-1', data);
@@ -1983,6 +1990,38 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
       const cmd = String(p.command);
       if (cmd.startsWith('false')) return { stdout: '', stderr: 'command failed', exitCode: 1 };
       return { stdout: `$ ${cmd}\n(mock) executed in ${p.cwd ?? '~'}\n`, stderr: '', exitCode: 0 };
+    },
+
+    'compare.pairs': (p) => {
+      const src = fsOf(String(p.srcSession));
+      const dst = fsOf(String(p.dstSession));
+      const paths = p.srcPaths as string[];
+      const dstDir = P.normalize(String(p.dstDir));
+      const max = Number(p.maxFiles) || 5000;
+      const rename = paths.length === 1 && typeof p.newName === 'string' ? p.newName.trim() : '';
+      const mask = compileMask(String(p.fileMask ?? ''));
+      const pairs: T.FilePair[] = [];
+      let truncated = false;
+      const visit = (path: string, rel: string, targetPath: string, top: boolean) => {
+        const n = src.must(path);
+        const name = P.basename(path);
+        if (!top && ((p.excludeHidden && name.startsWith('.')) || !matchTransferMask(mask, name, n.kind === 'dir'))) return;
+        if (n.kind === 'dir') {
+          for (const c of [...n.children!.values()].sort((a, b) => a.name.localeCompare(b.name))) visit(P.join(path, c.name), `${rel}/${c.name}`, P.join(targetPath, c.name), false);
+          return;
+        }
+        if (pairs.length >= max) {
+          truncated = true;
+          return;
+        }
+        const t = dst.get(targetPath, false);
+        pairs.push({ rel, source: src.entry(n, path), targetPath, target: t ? dst.entry(t, targetPath) : null });
+      };
+      for (const sp of paths) {
+        const name = rename || P.basename(sp);
+        visit(P.normalize(sp), name, P.join(dstDir, name), true);
+      }
+      return { pairs, truncated };
     },
 
     'archive.extract': (p) => {
@@ -2245,6 +2284,9 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
       return { ...e };
     },
     'edit.list': () => [...edits.values()],
+    // the demo has no formatters installed: Prettier, SQL and XML run in the browser anyway
+    'edit.formatters': () => [],
+    'edit.format': (p) => fail('unsupported', `no formatter for ${String(p.language)} is installed`),
     'edit.stop': (p) => {
       edits.delete(String(p.id));
       return null;

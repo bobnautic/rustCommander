@@ -440,6 +440,120 @@ try {
 }
 
 {
+  // Editor and pre-copy checks on a fresh page, so earlier steps cannot influence them.
+  const ectx = await browser.newContext({ viewport: { width: 1366, height: 820 }, colorScheme: 'light', locale: 'en-US' });
+  const ep = await ectx.newPage();
+  watch(ep, 'editor');
+  const erow = (side, name) => ep.locator(`[data-testid="table-${side}"] .ft-row[data-name="${name}"]`);
+  const edlg = (title) => ep.locator('.dlg').filter({ has: ep.locator('h2', { hasText: title }) });
+  const activeCm = '[data-testid="editor"] .cm-wrap:not(.cm-hidden) .cm-content';
+  const settled = () =>
+    ep.waitForFunction(() => {
+      const rows = document.querySelectorAll('[data-testid="fp-row"]');
+      return rows.length > 0 && !document.querySelector('[data-testid="fp-row"][data-status="hashing"], [data-testid="fp-row"][data-status="pending"]');
+    }, null, { timeout: 15000 });
+
+  await step('editor: problems, formatting, status bar, open file (Ctrl+P)', async () => {
+    await ep.goto(`${base}/?mock=1&fast=1`);
+    await erow('left', 'Desktop').dblclick();
+    await erow('left', 'servers.json').click();
+    await ep.keyboard.press('F4');
+    await ep.locator(activeCm).waitFor();
+    const problems = ep.locator('[data-testid="editor-problems"]');
+    // duplicate key (warning) and trailing comma (error)
+    await ep.waitForFunction(() => /1\s*1/.test(document.querySelector('[data-testid="editor-problems"]')?.textContent ?? ''), null, { timeout: 5000 });
+    await problems.click();
+    const panel = await ep.locator('.cm-panel-lint').innerText();
+    assert(panel.includes('Duplicate key “web”') && panel.includes('Trailing comma'), `lint panel: ${panel}`);
+    const status = await ep.locator('[data-testid="editor-status"]').innerText();
+    assert(/JSON/.test(status) && /Spaces: 2/.test(status) && /LF/.test(status), `status bar: ${status}`);
+    await snap(ep, 'editor-problems.png');
+    await ep.keyboard.press('Escape');
+    // Prettier keeps the file's quote style
+    await ep.keyboard.press('Control+p');
+    const of = edlg('Open file');
+    await of.waitFor();
+    await ep.locator('[data-testid="open-file-path"]').fill('/home/demo/projects/website/js/app');
+    await of.locator('.of-item', { hasText: 'app.js' }).waitFor();
+    await ep.keyboard.press('Enter');
+    await of.waitFor({ state: 'detached' });
+    await ep.locator('.editor-tab.on', { hasText: 'app.js' }).waitFor();
+    await ep.locator('[data-testid="editor-language"]', { hasText: 'JavaScript' }).waitFor();
+    await ep.locator(activeCm).click();
+    await ep.keyboard.press('Control+End');
+    await ep.keyboard.type("\nconst  extra={a:'b'}");
+    await ep.keyboard.press('Shift+Alt+F');
+    await ep.locator('.toast', { hasText: 'Formatted with Prettier' }).waitFor();
+    const text = await ep.locator(activeCm).innerText();
+    assert(text.includes("const extra = { a: 'b' };"), `formatted text: ${text.slice(-120)}`);
+    await ep.locator('[data-testid="editor-changes"]').click();
+    await ep.locator('[data-testid="editor"] .cm-changedLine').first().waitFor();
+    await snap(ep, 'editor-changes.png');
+    // language picker
+    await ep.locator('[data-testid="editor-language"]').click();
+    await ep.locator('[data-testid="lang-picker"] input').fill('typescr');
+    await ep.keyboard.press('Enter');
+    await ep.locator('[data-testid="editor-language"]', { hasText: 'TypeScript' }).waitFor();
+  });
+
+  await step('fingerprints: compare source and target, diff, copy only changed', async () => {
+    await ep.keyboard.press('Escape');
+    await ep.locator('[data-testid="editor"]').waitFor({ state: 'detached' });
+    await ep.locator('[data-testid="tb-new-session"]').click();
+    await edlg('Site Manager').locator('[data-testid="site-web-01"]').click();
+    await edlg('Site Manager').locator('[data-testid="site-login"]').click();
+    await edlg('Unknown host key').locator('[data-testid="prompt-accept-save"]').click();
+    await erow('right', 'about.html').waitFor();
+    // the site's local directory opens in the left panel
+    await erow('left', 'index.html').waitFor();
+    await erow('left', 'index.html').click();
+    await ep.keyboard.press('Control+a');
+    await ep.keyboard.press('Control+k');
+    const fp = edlg('Fingerprints');
+    await fp.waitFor();
+    await settled();
+    const states = await fp.locator('[data-testid="fp-row"]').evaluateAll((els) => Object.fromEntries(els.map((e) => [e.children[1].textContent, e.dataset.status])));
+    assert(states['js/app.js'] === 'identical' && states['css/style.css'] === 'different' && states['index.html'] === 'sizeDiffers' && states['contact.html'] === 'new', JSON.stringify(states));
+    await snap(ep, 'fingerprints.png');
+    await fp.locator('[data-testid="fp-row"][data-status="different"] [data-testid="fp-diff"]').click();
+    const diff = ep.locator('.diff-dialog');
+    await diff.locator('[data-testid="diff-view"] .cm-editor').first().waitFor();
+    assert((await diff.locator('.dlg-head').innerText()).includes('1 change'), 'diff header');
+    await snap(ep, 'diff.png');
+    await diff.locator('.dlg-foot-buttons button').click();
+    await fp.locator('[data-testid="fp-copy-changed"]').click();
+    await fp.waitFor({ state: 'detached' });
+    await ep.locator('[data-testid="job"][data-state="completed"]').first().waitFor({ timeout: 15000 });
+    await ep.keyboard.press('Control+k');
+    await fp.waitFor();
+    await settled();
+    await fp.locator('[data-testid="fp-summary"]', { hasText: 'All files are identical' }).waitFor();
+    await fp.locator('.dlg-close').click();
+  });
+
+  await step('copy dialog and overwrite question compare fingerprints', async () => {
+    await erow('left', 'about.html').click();
+    await ep.keyboard.press('F5');
+    const cd = edlg('Copy');
+    await cd.waitFor();
+    await cd.locator('[data-testid="copy-fingerprints"]').click();
+    const fp = edlg('Fingerprints');
+    await fp.waitFor();
+    await settled();
+    assert((await fp.locator('[data-testid="fp-copy-changed"]').innerText()).includes('Nothing to copy'), 'nothing to copy expected');
+    await fp.locator('.dlg-close').click();
+    await cd.locator('button[type=submit]').click();
+    const cf = ep.locator('.conflict-dialog');
+    await cf.waitFor();
+    await cf.locator('[data-testid="conflict-fp-run"]').click();
+    await cf.locator('[data-testid="conflict-fp"]', { hasText: 'Both files have the same content' }).waitFor();
+    await cf.locator('[data-testid="conflict-skip"]').click();
+    await cf.waitFor({ state: 'detached' });
+  });
+  await ectx.close();
+}
+
+{
   const vctx = await browser.newContext({ viewport: { width: 1200, height: 760 }, locale: 'en-US' });
   const vp = await vctx.newPage();
   watch(vp, 'vault');

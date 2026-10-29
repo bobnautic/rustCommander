@@ -369,7 +369,7 @@ impl SiteConfig {
             match ui.split_once(':') {
                 Some((u, p)) => {
                     site.username = url_unescape(u);
-                    // WinSCP-style `user:pass;fingerprint=...` — drop parameters.
+                    // Session URLs may carry `user:pass;fingerprint=...` — drop parameters.
                     let p = p.split(';').next().unwrap_or(p);
                     site.password = Some(url_unescape(p));
                 }

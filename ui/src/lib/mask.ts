@@ -1,4 +1,4 @@
-// WinSCP-style file masks: '*.jpg; *.png | thumbs/; *.tmp'
+// File masks: '*.jpg; *.png | thumbs/; *.tmp'
 //   left of '|' = include, right = exclude; ';' or ',' separate masks; a trailing '/' targets directories.
 
 interface Matcher {

@@ -109,7 +109,7 @@ fn shell_quote(s: &str) -> String {
     }
 }
 
-/// Expand WinSCP-style patterns in a custom command.
+/// Expand the `!` patterns (`!`, `!&`, `!/`, `!@`, `!U`, ...) in a custom command.
 pub fn expand(cmd: &str, name: Option<&str>, names: &[String], cwd: &str, host: &str, user: &str) -> String {
     let mut out = String::with_capacity(cmd.len() + 32);
     let mut chars = cmd.chars().peekable();

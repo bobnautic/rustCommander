@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeftRight, Code2, Globe, KeyRound, Lock, Radar, Settings, Shield, SquareTerminal, Trash2, Search } from 'lucide-react';
-import type { KnownHost, Settings as SettingsT } from '../../api/types';
+import type { FormatterInfo, KnownHost, Settings as SettingsT } from '../../api/types';
 import { call } from '../../api/client';
 import { tr, useT } from '../../i18n';
 import { formatDate } from '../../lib/format';
+import { installedFormatters } from '../../lib/editor/format';
 import { load, save } from '../../lib/storage';
 import { saveSettings, useApp } from '../../store/app';
 import { confirmDialog, type DialogPropsMap } from '../../store/dialogs';
@@ -13,6 +14,34 @@ import { Badge, Button, Checkbox, Dialog, DialogButtons, Field, IconButton, Numb
 import { TransferOptionsForm } from './common';
 
 type Tab = 'general' | 'transfer' | 'discovery' | 'server' | 'editor' | 'terminal' | 'security';
+
+/** Built-in formatters plus the ones found on the host. */
+function InstalledFormatters() {
+  const t = useT();
+  const [list, setList] = useState<FormatterInfo[] | null>(null);
+  useEffect(() => {
+    void installedFormatters().then(setList);
+  }, []);
+  return (
+    <div className="span2 prefs-formatters">
+      <div className="field-label">{t('prefs.formatters')}</div>
+      <div className="muted small">{t('prefs.formattersBuiltin')}</div>
+      <div className="row gap wrap">
+        {list === null ? (
+          <Spinner size={14} />
+        ) : list.length ? (
+          list.map((f) => (
+            <Badge key={f.id} tone="ok" title={`${f.path} – ${f.languages.join(', ')}`}>
+              {f.id}
+            </Badge>
+          ))
+        ) : (
+          <span className="muted small">{t('prefs.formattersNone')}</span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function KnownHosts() {
   const t = useT();
@@ -261,7 +290,14 @@ export default function PreferencesDialog({ props, close }: { props: DialogProps
             <Field label={t('prefs.tabSize')}>
               <NumberInput value={draft.editor.tabSize} min={1} max={16} onChange={(v) => sub('editor', { tabSize: v })} />
             </Field>
+            <Field label={t('prefs.printWidth')} hint={t('prefs.printWidthHint')}>
+              <NumberInput value={draft.editor.printWidth} min={40} max={240} onChange={(v) => sub('editor', { printWidth: v })} />
+            </Field>
+            <div />
             <Checkbox label={t('editor.wordWrap')} checked={draft.editor.wordWrap} onChange={(v) => sub('editor', { wordWrap: v })} />
+            <Checkbox label={t('prefs.lint')} checked={draft.editor.lint} onChange={(v) => sub('editor', { lint: v })} />
+            <Checkbox label={t('prefs.formatOnSave')} checked={draft.editor.formatOnSave} onChange={(v) => sub('editor', { formatOnSave: v })} />
+            <InstalledFormatters />
           </div>
         )}
         {tab === 'terminal' && (
