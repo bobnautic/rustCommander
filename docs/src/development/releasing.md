@@ -52,6 +52,10 @@ release is marked *latest*, so
 - **dry-run** — only build; the files can be downloaded from the workflow run's
   *Artifacts* section and no tag or release is created. Useful to test packaging changes.
 
+Pull requests that change the release workflow, `scripts/set-version.mjs` or
+`src-tauri/tauri.conf.json` run the build jobs too (version `0.0.0-pr.<number>`, workflow
+artifacts only), so packaging changes are tested before they reach a release.
+
 If a run failed for a transient reason, **Re-run failed jobs** on the run continues it. When
 the release already exists, the publish job replaces its files.
 

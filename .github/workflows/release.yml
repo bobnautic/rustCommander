@@ -5,6 +5,8 @@ name: Release
 # or with "Run workflow" on the Actions tab (enter the version; the tag is created on the
 # selected branch). Every platform is built and tested first; the GitHub release with all
 # downloads is created only when everything succeeded.
+# Pull requests that change the packaging build all downloads as well (version
+# 0.0.0-pr.<number>, workflow artifacts only, nothing is published).
 
 on:
   push:
@@ -22,13 +24,18 @@ on:
         description: 'Only build the downloads (workflow artifacts), do not create a release'
         type: boolean
         default: false
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/set-version.mjs
+      - src-tauri/tauri.conf.json
 
 permissions:
   contents: read
 
 concurrency:
   group: release-${{ inputs.version || github.ref_name }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -46,8 +53,13 @@ jobs:
         id: version
         env:
           INPUT_VERSION: ${{ inputs.version }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then v="${INPUT_VERSION#v}"; else v="${GITHUB_REF_NAME#v}"; fi
+          case "$GITHUB_EVENT_NAME" in
+            workflow_dispatch) v="${INPUT_VERSION#v}" ;;
+            pull_request) v="0.0.0-pr.$PR_NUMBER" ;;
+            *) v="${GITHUB_REF_NAME#v}" ;;
+          esac
           if ! [[ "$v" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
             echo "::error::'$v' is not a version like 1.2.3 or 1.2.3-beta.1"
             exit 1
@@ -65,6 +77,7 @@ jobs:
 
   checks:
     name: Checks
+    if: github.event_name != 'pull_request' # CI runs on the pull request itself
     uses: ./.github/workflows/ci.yml
 
   desktop:
@@ -209,7 +222,7 @@ jobs:
   publish:
     name: Publish release
     needs: [prepare, checks, desktop, rcmd]
-    if: ${{ !inputs.dry-run }}
+    if: ${{ github.event_name != 'pull_request' && !inputs.dry-run }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
