@@ -1,7 +1,35 @@
 [package]
 name = "rc-server"
+description = "Rust Commander web server: exposes the UI and API over HTTP(S)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+rc-core.workspace = true
+rc-api.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+bytes.workspace = true
+sha2.workspace = true
+chrono.workspace = true
+rustls.workspace = true
+axum = { version = "0.8", features = ["ws", "macros"] }
+axum-server = { version = "0.8", default-features = false, features = ["tls-rustls-no-provider"] }
+rust-embed = { version = "8", features = ["debug-embed"] }
+mime_guess = "2"
+rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
+async_zip = { version = "0.0.17", default-features = false, features = ["tokio", "chrono"] }
+percent-encoding = "2"
+base64.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+reqwest.workspace = true
+tempfile = "3"

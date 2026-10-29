@@ -1,5 +1,6 @@
 [package]
 name = "rc-cli"
+description = "rcmd: headless Rust Commander server, LAN discovery and WinSCP-style scripting"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,3 +10,18 @@ name = "rcmd"
 path = "src/main.rs"
 
 [dependencies]
+rc-core.workspace = true
+rc-api.workspace = true
+rc-server.workspace = true
+rc-discovery.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+chrono.workspace = true
+rpassword = "7"
+
+[dev-dependencies]
+tempfile = "3"
