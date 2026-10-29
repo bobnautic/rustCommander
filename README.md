@@ -31,6 +31,7 @@ Ein Zwei-Fenster-Dateimanager und Transfer-Client im Stil von [WinSCP](https://g
 - **Webmodus auf dem Zielhost** – `rcmd serve` startet Rust Commander ohne GUI auf einem Server. Vom Quellhost aus öffnet man `https://zielhost:8822/` im Browser und bekommt die komplette Oberfläche mit dem Dateisystem des Zielhosts. Von dort aus kann man auch zu weiteren Servern verbinden. Uploads und Downloads laufen direkt zwischen Browser und Zielhost (Ordner werden als ZIP gestreamt).
 - **LAN-Discovery** – Instanzen kündigen sich per UDP-Broadcast und Multicast an (Port 47800) und erscheinen in der Seitenleiste **„In der Nähe“**. Die Weboberfläche lässt sich dort per Klick öffnen, oder man bindet die andere Instanz **als Dateipanel** ein (Protokoll `rcmd`, TLS mit Fingerprint-Pinning). Instanzen in anderen Netzen kann man über ihre Adresse hinzufügen.
 - **Diese Instanz freigeben** – Die Desktop-App kann ihre eigene Oberfläche ebenfalls im Netz anbieten (Passwort, HTTPS).
+- **Remote-Explorer** – Seitenleiste (Strg+Umschalt+E) mit allen SSH-Zielen: gespeicherte SFTP/SCP-Verbindungen und die Hosts aus `~/.ssh/config` (ohne Import, inklusive `ProxyJump`), oder einfach `user@host[:port]` eintippen. Ordner klappt man als Baum auf, ein Klick auf eine Datei zeigt Details und eine Vorschau der ersten 64 KiB. Der Explorer ist rein lesend: Auf dem Zielhost wird nichts installiert, und es werden keine Dateien kopiert. Hat ein Server kein SFTP (z. B. Router oder Appliances mit Dropbear), listet der Explorer über dieselbe SSH-Verbindung mit Shell-Befehlen (`ls`).
 - **Integriertes Terminal** – SSH-Shell und lokale Shell in Tabs (xterm.js). WinSCP braucht dafür PuTTY.
 - **Port-Weiterleitung** – Lokale Weiterleitung (`-L`) und dynamischer SOCKS5-Proxy (`-D`) über SSH-Sitzungen.
 - **Cloud-Speicher** – Azure Blob Storage und Google Cloud Storage zusätzlich zu S3.
@@ -92,6 +93,12 @@ rcmd serve --no-terminal          # keine Shell/Befehle für Web-Benutzer
 
 Ohne gespeichertes Passwort erzeugt `rcmd serve` ein Einmal-Passwort und gibt es zusammen mit den URLs und dem TLS-Fingerprint aus. Den Fingerprint vergleicht man beim ersten Aufruf im Browser. Dauerbetrieb: `packaging/rust-commander.service` (systemd) oder das `Dockerfile`.
 
+### Remote-Explorer
+
+**Strg+Umschalt+E** (oder das Baum-Symbol in der Werkzeugleiste) öffnet den Explorer in der Seitenleiste. Ein Klick auf ein Ziel verbindet per SSH (Host-Key-Prüfung und Anmeldung wie bei jeder Sitzung) und zeigt Home-Verzeichnis und `/` als Baum. Das Eingabefeld filtert die Ziele; steht dort eine Adresse wie `admin@10.0.0.7:2222`, verbindet Enter direkt dorthin. Pfeiltasten navigieren im Baum, ←/→ klappen zu und auf. Über das Kontextmenü gibt es *Gehe zu Pfad…*, *Im Fenster öffnen* (zeigt den Ordner in einem Dateifenster), *Terminal hier* und *Pfad kopieren*. Die Verbindung erscheint zusätzlich als Sitzungs-Tab und lässt sich dort oder im Explorer trennen.
+
+Im Webmodus sind es die `~/.ssh/config` und die SSH-Schlüssel des Benutzers, unter dem `rcmd serve` läuft.
+
 ### Instanzen im Netz finden
 
 ```bash
@@ -124,7 +131,7 @@ cargo test --workspace
 
 Die Protokoll-Integrationstests laufen nur mit echten Servern und werden über Umgebungsvariablen aktiviert:
 
-- SSH: `RC_TEST_SSH_HOST`, `RC_TEST_SSH_PORT`, `RC_TEST_SSH_USER`, `RC_TEST_SSH_PASSWORD`, `RC_TEST_SSH_KEY`
+- SSH: `RC_TEST_SSH_HOST`, `RC_TEST_SSH_PORT`, `RC_TEST_SSH_USER`, `RC_TEST_SSH_PASSWORD`, `RC_TEST_SSH_KEY`; für den Remote-Explorer zusätzlich `RC_TEST_SSH_NO_SFTP_PORT` (zweiter Server ohne `Subsystem sftp`, siehe Kopfkommentar von `crates/rc-api/tests/explorer.rs`)
 - FTP/Cloud: `RC_TEST_FTP_URL`, `RC_TEST_FTPES_URL`, `RC_TEST_FTPS_URL`, `RC_TEST_WEBDAV_URL`, `RC_TEST_S3_ENDPOINT`, `RC_TEST_AZURE_ENDPOINT` … Die passenden Testserver (Python-Skripte) liegen in `crates/rc-core/tests/servers/`. Eine Anleitung steht in den Kopfkommentaren von `crates/rc-core/tests/ftp.rs` und `cloud.rs`.
 
 Die Oberfläche lässt sich ohne Backend mit Testdaten ausprobieren: `npm --prefix ui run dev` und dann `http://localhost:5173/?mock=1` öffnen. Der Playwright-Smoke-Test der Oberfläche läuft mit `npm --prefix ui test`.

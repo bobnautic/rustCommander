@@ -3,11 +3,11 @@ import {
   ArrowLeftRight, Bookmark, CircleHelp, Columns2, Copy, Download, Edit3, Eye, EyeOff, FilePlus, FolderInput, FolderPlus, FolderSync,
   GitCompareArrows, Hash, Info, Keyboard, Link2, ListChecks, Lock, LogOut, Menu as MenuIcon, Monitor, Moon, MoveRight, Network,
   PanelBottom, PanelLeft, Pencil, Plus, RefreshCw, Search, Settings, Share2, SquareTerminal, Sun, SunMoon, Trash2, Unplug, Upload,
-  Command, Archive, ArrowDownUp, Radar, ClipboardCopy, FolderOpen, Route, Repeat,
+  Command, Archive, ArrowDownUp, Radar, ClipboardCopy, FolderOpen, Route, Repeat, FolderTree,
 } from 'lucide-react';
 import { call, mode, webLogout } from '../api/client';
 import { tr, useT, type TFn } from '../i18n';
-import { cycleTheme, saveSettings, setLayout, setTheme, toggleDock, toggleHidden, useApp } from '../store/app';
+import { cycleTheme, saveSettings, setLayout, setTheme, toggleDock, toggleHidden, toggleSidebar, useApp } from '../store/app';
 import { openDialog, openSingleton } from '../store/dialogs';
 import { clearCompare, compareDirectories, getPanel, navigate, other, patchPanel, refresh, selectAll, selectNone, invertSelection, setSort, usePanels, type SortKey } from '../store/panels';
 import * as ops from '../actions/fileOps';
@@ -141,7 +141,9 @@ export function buildMenus(t: TFn): { id: string; label: string; items: () => Me
         const sortItem = (key: SortKey, label: string): MenuItem => ({ label, checked: p.sortKey === key, onClick: () => setSort(side, key) });
         return [
           { label: t('view.showHidden'), icon: st.settings?.showHidden ? Eye : EyeOff, checked: st.settings?.showHidden, shortcut: k('Ctrl+H'), onClick: () => toggleHidden() },
-          { label: t('nearby.title'), icon: PanelLeft, checked: st.sidebarOpen, shortcut: k('Ctrl+B'), onClick: () => setLayout({ sidebarOpen: !st.sidebarOpen }) },
+          { label: t('sidebar.toggle'), icon: PanelLeft, checked: st.sidebarOpen, shortcut: k('Ctrl+B'), onClick: () => setLayout({ sidebarOpen: !st.sidebarOpen }) },
+          { label: t('nearby.title'), icon: Radar, checked: st.sidebarOpen && st.sidebarView === 'nearby', onClick: () => toggleSidebar('nearby') },
+          { label: t('explorer.title'), icon: FolderTree, checked: st.sidebarOpen && st.sidebarView === 'explorer', shortcut: k('Ctrl+Shift+E'), onClick: () => toggleSidebar('explorer'), testId: 'menu-explorer' },
           { label: t('dock.title'), icon: PanelBottom, checked: st.dockOpen, shortcut: k('Ctrl+J'), onClick: () => toggleDock() },
           { separator: true },
           {
@@ -193,7 +195,8 @@ export function buildMenus(t: TFn): { id: string; label: string; items: () => Me
           { label: t('prefs.knownHosts'), icon: Lock, onClick: () => openSingleton('preferences', { tab: 'security' }) },
           { separator: true },
           { label: t('share.title'), icon: Share2, hidden: webUi, onClick: () => openSingleton('share', {}) },
-          { label: t('nearby.title'), icon: Radar, onClick: () => setLayout({ sidebarOpen: true }) },
+          { label: t('nearby.title'), icon: Radar, onClick: () => setLayout({ sidebarOpen: true, sidebarView: 'nearby' }) },
+          { label: t('explorer.title'), icon: FolderTree, shortcut: k('Ctrl+Shift+E'), onClick: () => setLayout({ sidebarOpen: true, sidebarView: 'explorer' }) },
         ];
       },
     },
@@ -220,6 +223,7 @@ export function MenuBar() {
   const narrow = useApp((s) => s.narrow);
   const settings = useApp((s) => s.settings);
   const sidebarOpen = useApp((s) => s.sidebarOpen);
+  const sidebarView = useApp((s) => s.sidebarView);
   const dockOpen = useApp((s) => s.dockOpen);
   const syncBrowse = useApp((s) => s.syncBrowse);
   const webUi = useApp((s) => s.info?.mode === 'web');
@@ -301,7 +305,15 @@ export function MenuBar() {
         <IconButton icon={ArrowLeftRight} title={t('panel.syncBrowse')} active={syncBrowse} onClick={() => setLayout({ syncBrowse: !syncBrowse })} className="hide-narrow" />
         {terminal && <IconButton icon={SquareTerminal} title={t('terminal.open')} shortcut={keyLabel('Ctrl+T')} onClick={() => ops.openTerminalHere(side())} data-testid="tb-terminal" />}
         <div className="toolbar-spacer" />
-        <IconButton icon={Radar} title={t('nearby.title')} shortcut={keyLabel('Ctrl+B')} active={sidebarOpen} onClick={() => setLayout({ sidebarOpen: !sidebarOpen })} data-testid="tb-nearby" />
+        {narrow ? (
+          // one button on phones: the sidebar's own tabs switch the view
+          <IconButton icon={sidebarView === 'explorer' ? FolderTree : Radar} title={t('sidebar.toggle')} active={sidebarOpen} onClick={() => setLayout({ sidebarOpen: !sidebarOpen })} data-testid="tb-sidebar" />
+        ) : (
+          <>
+            <IconButton icon={FolderTree} title={t('explorer.title')} shortcut={keyLabel('Ctrl+Shift+E')} active={sidebarOpen && sidebarView === 'explorer'} onClick={() => toggleSidebar('explorer')} data-testid="tb-explorer" />
+            <IconButton icon={Radar} title={t('nearby.title')} active={sidebarOpen && sidebarView === 'nearby'} onClick={() => toggleSidebar('nearby')} data-testid="tb-nearby" />
+          </>
+        )}
         <IconButton icon={PanelBottom} title={t('dock.title')} shortcut={keyLabel('Ctrl+J')} active={dockOpen} onClick={() => toggleDock()} className="hide-narrow" />
         <IconButton icon={ThemeIcon} title={`${t('view.theme')}: ${t(`theme.${settings?.theme ?? 'system'}`)}`} onClick={() => cycleTheme()} data-testid="tb-theme" />
         <IconButton icon={Settings} title={t('prefs.title')} shortcut={keyLabel('Ctrl+,')} onClick={() => openSingleton('preferences', {})} />

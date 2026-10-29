@@ -49,6 +49,19 @@ Host db-01
 Host pi
     HostName pi.local
     User pi
+
+Host build-box
+    HostName 10.0.4.17
+    Port 2222
+    User ci
+    ProxyJump web-01
+
+Host router
+    HostName router.lan
+    User root
+
+Host *.internal
+    User admin
 `,
   pubKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGq9xI0dT2bQvO2c8mXkq8gJkF1s3hYV7c9Rz1yq3Jd demo@demo-workstation\n',
   privKey: `-----BEGIN OPENSSH PRIVATE KEY-----

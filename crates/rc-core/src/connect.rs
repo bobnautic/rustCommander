@@ -55,6 +55,18 @@ pub async fn connect(site: &SiteConfig, ctx: &ConnectContext) -> Result<Arc<dyn 
     }
 }
 
+/// Like [`connect()`], but an SFTP site whose server cannot run SFTP is browsed through shell
+/// commands instead (SCP mode, same SSH connection, nothing is installed on the server).
+/// Returns the protocol actually in use.
+pub async fn connect_with_shell_fallback(site: &SiteConfig, ctx: &ConnectContext) -> Result<(Arc<dyn Vfs>, Protocol)> {
+    #[cfg(feature = "ssh")]
+    if site.protocol == Protocol::Sftp {
+        tracing::info!(session = %ctx.session_id, "connecting to {} (SFTP, shell fallback)", site.display_name());
+        return crate::protocols::ssh::connect_sftp_or_shell(site, ctx).await;
+    }
+    Ok((connect(site, ctx).await?, site.protocol))
+}
+
 /// Protocols compiled into this build.
 pub fn available_protocols() -> Vec<Protocol> {
     let mut v = vec![Protocol::Local];

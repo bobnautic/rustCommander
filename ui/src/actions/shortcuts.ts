@@ -2,7 +2,7 @@
 import { isAnyDialogOpen, openSingleton } from '../store/dialogs';
 import { usePrompts } from '../store/misc';
 import { useEditors } from '../store/editors';
-import { setLayout, toggleDock, toggleHidden, useApp } from '../store/app';
+import { setLayout, toggleDock, toggleHidden, toggleSidebar, useApp } from '../store/app';
 import { goBack, goForward, goRoot, refresh, type Side } from '../store/panels';
 import { useContextMenu } from '../components/Menu';
 import { focusPathBar } from '../components/panel/PathBar';
@@ -46,6 +46,7 @@ export const BINDINGS: Record<string, Action> = {
   'Ctrl+D': (s) => void ops.addBookmark(s),
   'Ctrl+Shift+S': () => ops.synchronize(),
   'Ctrl+B': () => setLayout({ sidebarOpen: !useApp.getState().sidebarOpen }),
+  'Ctrl+Shift+E': () => toggleSidebar('explorer'),
   'Ctrl+J': () => toggleDock(),
   'Alt+ArrowLeft': (s) => void goBack(s),
   'Alt+ArrowRight': (s) => void goForward(s),
@@ -84,7 +85,7 @@ export function installShortcuts(): () => void {
     if (e.defaultPrevented || e.isComposing) return;
     const combo = comboOf(e);
     // a few shortcuts also work while typing in inputs outside of dialogs
-    const always = combo === 'Ctrl+B' || combo === 'Ctrl+J';
+    const always = combo === 'Ctrl+B' || combo === 'Ctrl+J' || combo === 'Ctrl+Shift+E';
     const target = e.target as HTMLElement | null;
     if (blocked(target)) {
       const inPlainInput = !!target?.closest?.('input, select') && !isAnyDialogOpen() && !useEditors.getState().visible && !usePrompts.getState().queue.length;

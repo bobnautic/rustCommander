@@ -81,6 +81,16 @@ pub async fn open(state: &Arc<AppState>, p: OpenParams) -> Result<SessionSummary
 }
 
 pub async fn connect_site(state: &Arc<AppState>, site: SiteConfig) -> Result<SessionSummary> {
+    connect_site_opts(state, site, false).await
+}
+
+/// `shell_fallback`: browse an SFTP site through shell commands when the server cannot run
+/// SFTP (see [`rc_core::connect_with_shell_fallback`]).
+pub async fn connect_site_opts(
+    state: &Arc<AppState>,
+    mut site: SiteConfig,
+    shell_fallback: bool,
+) -> Result<SessionSummary> {
     if site.protocol == Protocol::Local {
         return Ok(state.session(LOCAL_SESSION)?.summary.clone());
     }
@@ -104,9 +114,16 @@ pub async fn connect_site(state: &Arc<AppState>, site: SiteConfig) -> Result<Ses
         }),
     });
     let ctx = ConnectContext { prompter, known_hosts: state.known_hosts.clone(), session_id: id.clone() };
-    let vfs = rc_core::connect(&site, &ctx).await.inspect_err(|e| {
+    let connected = if shell_fallback {
+        rc_core::connect_with_shell_fallback(&site, &ctx).await
+    } else {
+        rc_core::connect(&site, &ctx).await.map(|vfs| (vfs, site.protocol))
+    };
+    let (vfs, protocol) = connected.inspect_err(|e| {
         tracing::warn!(session = %id, "connection to {} failed: {e}", site.display_name());
     })?;
+    // Reconnects use the protocol that worked.
+    site.protocol = protocol;
     // Reconnect transparently when the server drops an idle connection.
     let vfs: Arc<dyn rc_core::Vfs> = Arc::new(rc_core::reconnect::ReconnectingVfs::new(site.clone(), ctx, vfs));
     let home = vfs.home().await.unwrap_or_else(|_| "/".into());

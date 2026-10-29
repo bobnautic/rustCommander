@@ -681,6 +681,27 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
     return f;
   }
 
+  /** Host entries of the demo ~/.ssh/config (wildcards are skipped, User defaults to the local user). */
+  function sshConfigHosts() {
+    const hosts: { name: string; host: string; username: string; port: number; jump: string | null }[] = [];
+    let cur: (typeof hosts)[number] | null = null;
+    for (const raw of TEXT.sshConfig.split('\n')) {
+      const m = /^(\S+)\s+(.+)$/.exec(raw.trim());
+      if (!m) continue;
+      const [k, v] = [m[1].toLowerCase(), m[2].trim()];
+      if (k === 'host') {
+        cur = v.includes('*') ? null : { name: v, host: v, username: info.user, port: 22, jump: null };
+        if (cur) hosts.push(cur);
+      } else if (cur) {
+        if (k === 'hostname') cur.host = v;
+        else if (k === 'user') cur.username = v;
+        else if (k === 'port') cur.port = parseInt(v, 10) || 22;
+        else if (k === 'proxyjump') cur.jump = v;
+      }
+    }
+    return hosts;
+  }
+
   function parseUrl(url: string): T.SiteConfig {
     let u: URL;
     try {
@@ -1774,6 +1795,46 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
       return { items };
     },
 
+    'explorer.targets': () => {
+      const ssh = (p: T.Protocol) => p === 'sftp' || p === 'scp';
+      const saved = sites.filter((s) => ssh(s.protocol));
+      const out: T.ExplorerTarget[] = saved.map((s) => ({
+        id: `site:${s.id}`, source: 'site', name: s.name || s.host, folder: s.folder, protocol: s.protocol, host: s.host, port: s.port || 22,
+        username: s.username, siteId: s.id, jump: s.ssh.jumpSiteId ? (sites.find((x) => x.id === s.ssh.jumpSiteId)?.name ?? s.ssh.jumpSiteId) : null, color: s.color ?? null,
+      }));
+      for (const h of sshConfigHosts()) {
+        if (saved.some((s) => s.host === h.host && (s.port || 22) === h.port && s.username === h.username)) continue;
+        out.push({ id: `ssh:${h.name}`, source: 'sshConfig', name: h.name, folder: '', protocol: 'sftp', host: h.host, port: h.port, username: h.username, siteId: null, jump: h.jump, color: null });
+      }
+      return out;
+    },
+    'explorer.connect': async (p) => {
+      const target = p.target ? String(p.target) : '';
+      let site: T.SiteConfig;
+      if (target.startsWith('site:')) site = deepClone(sites.find((x) => x.id === target.slice(5)) ?? fail('not_found', 'Site not found'));
+      else if (target.startsWith('ssh:')) {
+        const h = sshConfigHosts().find((x) => x.name === target.slice(4)) ?? fail('not_found', `Host ${target.slice(4)} is not in ~/.ssh/config`);
+        const t = siteTemplate('sftp');
+        site = { ...t, name: h.name, host: h.host, username: h.username, port: h.port, ssh: { ...t.ssh, privateKeyPath: '~/.ssh/id_ed25519' } };
+      } else if (target) return fail('invalid_input', `Unknown explorer target ${target}`);
+      else if (p.address) site = parseUrl(String(p.address));
+      else return fail('invalid_input', 'target or address required');
+      if (site.protocol !== 'sftp' && site.protocol !== 'scp') fail('invalid_input', `${site.name || site.host} is not an SSH target`);
+      // Demo of the shell fallback: routers and appliances often run SSH without an SFTP server.
+      if (site.protocol === 'sftp' && /^router\b/.test(site.host)) {
+        log('info', `SFTP not available on ${site.host} (subsystem request failed), using shell commands`);
+        site.protocol = 'scp';
+      }
+      return openSession({ site, password: (p.password as string | null | undefined) ?? null });
+    },
+    'explorer.preview': (p) => {
+      const fsys = fsOf(String(p.session));
+      const path = P.normalize(String(p.path));
+      const max = Math.min(Math.max(Number(p.maxBytes) || 64 * 1024, 1), 1024 * 1024);
+      const r = readText(fsys, path, max);
+      return { path, content: r.binary ? '' : r.content, size: r.size, binary: r.binary, truncated: r.size > max };
+    },
+
     'fs.list': (p) => {
       const fsys = fsOf(String(p.session));
       const path = P.normalize(String(p.path));
@@ -2288,7 +2349,7 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
       if (opts.login && !authenticated) fail('unauthorized', 'Not logged in');
       const fn = methods[method];
       if (!fn) fail('unknown_method', `Unknown method '${method}'`);
-      if (vault.locked && (method.startsWith('sites.') || method === 'session.open')) fail('locked', 'The credential vault is locked');
+      if (vault.locked && (method.startsWith('sites.') || method === 'session.open' || method === 'explorer.connect')) fail('locked', 'The credential vault is locked');
       await latency();
       try {
         const r = await fn((params ?? {}) as Dict);

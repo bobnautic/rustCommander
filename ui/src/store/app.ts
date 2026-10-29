@@ -7,9 +7,11 @@ import { toast } from './toasts';
 
 export type DockTab = 'queue' | 'terminal' | 'log' | 'search';
 export type Side = 'left' | 'right';
+export type SidebarView = 'nearby' | 'explorer';
 
 export interface Layout {
   sidebarOpen: boolean;
+  sidebarView: SidebarView;
   sidebarWidth: number;
   dockOpen: boolean;
   dockTab: DockTab;
@@ -34,6 +36,7 @@ interface AppStore extends Layout {
 
 const defaultLayout: Layout = {
   sidebarOpen: false,
+  sidebarView: 'nearby',
   sidebarWidth: 270,
   dockOpen: false,
   dockTab: 'queue',
@@ -67,6 +70,7 @@ export function setLayout(patch: Partial<Layout>) {
   const s = useApp.getState();
   const layout: Layout = {
     sidebarOpen: s.sidebarOpen,
+    sidebarView: s.sidebarView,
     sidebarWidth: s.sidebarWidth,
     dockOpen: s.dockOpen,
     dockTab: s.dockTab,
@@ -75,6 +79,13 @@ export function setLayout(patch: Partial<Layout>) {
     syncBrowse: s.syncBrowse,
   };
   save('layout', layout);
+}
+
+/** Shows the sidebar with `view`, or hides it when it already shows that view. */
+export function toggleSidebar(view: SidebarView) {
+  const s = useApp.getState();
+  if (s.sidebarOpen && s.sidebarView === view) setLayout({ sidebarOpen: false });
+  else setLayout({ sidebarOpen: true, sidebarView: view });
 }
 
 export function showDock(tab: DockTab) {

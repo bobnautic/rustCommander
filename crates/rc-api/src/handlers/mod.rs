@@ -1,5 +1,6 @@
 pub mod discovery;
 pub mod edit;
+pub mod explorer;
 pub mod fs;
 pub mod jobs;
 pub mod misc;

@@ -321,7 +321,7 @@ const SHORTCUT_DOCS: [string, string][] = [
   ['F2', 'ops.rename'], ['F3', 'ops.view'], ['F4', 'ops.edit'], ['Shift+F4', 'ops.newFile'], ['F5', 'ops.copy'], ['Shift+F5', 'help.copyNoDialog'],
   ['F6', 'ops.move'], ['Shift+F6', 'help.moveNoDialog'], ['F7', 'ops.newFolder'], ['F8', 'common.delete'], ['Alt+Enter', 'ops.properties'],
   ['Ctrl+R', 'common.refresh'], ['Ctrl+H', 'view.showHidden'], ['Ctrl+N', 'session.newSession'], ['Ctrl+T', 'terminal.open'], ['Ctrl+F', 'find.title'],
-  ['Ctrl+L', 'help.focusPath'], ['Ctrl+D', 'bookmarks.add'], ['Ctrl+Shift+S', 'sync.title'], ['Ctrl+B', 'nearby.title'], ['Ctrl+J', 'dock.title'],
+  ['Ctrl+L', 'help.focusPath'], ['Ctrl+D', 'bookmarks.add'], ['Ctrl+Shift+S', 'sync.title'], ['Ctrl+B', 'sidebar.toggle'], ['Ctrl+Shift+E', 'explorer.title'], ['Ctrl+J', 'dock.title'],
   ['Ctrl+Shift+C', 'ops.copyPath'], ['Ctrl+,', 'prefs.title'], ['Alt+←/→', 'help.backForward'],
   ['Tab', 'help.switchPanel'], ['Insert / Space', 'help.toggleSelect'], ['Ctrl+A', 'panel.selectAll'], ['+ / −', 'select.byMask'], ['*', 'select.invert'],
   ['Backspace', 'nav.up'], ['Enter', 'ops.open'], ['A–Z', 'help.typeAhead'], ['Ctrl+S', 'editor.save'],
