@@ -69,7 +69,9 @@ async fn peer_file_access() {
 
     peer.rename(&format!("{base}/remote/sub/f.bin"), &format!("{base}/remote/g.bin")).await.unwrap();
     peer.set_permissions(&format!("{base}/remote/g.bin"), 0o600).await.unwrap();
-    assert_eq!(peer.stat(&format!("{base}/remote/g.bin")).await.unwrap().permissions, Some(0o600));
+    // Windows only has a read-only flag: a writable file reads back as 0o666
+    let mode = if cfg!(unix) { 0o600 } else { 0o666 };
+    assert_eq!(peer.stat(&format!("{base}/remote/g.bin")).await.unwrap().permissions, Some(mode));
     peer.remove_dir_all(&format!("{base}/remote")).await.unwrap();
 
     // Shell on the peer through its event stream.

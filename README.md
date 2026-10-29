@@ -183,7 +183,7 @@ Requirements: Rust (stable, 1.91+), Node.js 20+, and on Linux the
 
 ```bash
 npm --prefix ui ci && npm --prefix ui run build   # user interface
-npm ci && npm run build                           # desktop app → src-tauri/target/release/bundle/
+npm ci && npm run build                           # desktop app → target/release/bundle/
 cargo build --release -p rc-cli                   # headless server + CLI → target/release/rcmd
 ```
 
