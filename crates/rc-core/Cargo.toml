@@ -10,9 +10,11 @@ default = ["ssh", "ftp", "cloud"]
 # SFTP / SCP / SSH terminal / tunnels (russh)
 ssh = []
 # FTP / FTPS (suppaftp)
-ftp = []
+ftp = ["dep:suppaftp", "tls"]
 # WebDAV / S3 / Azure Blob / Google Cloud Storage (OpenDAL)
-cloud = []
+cloud = ["dep:opendal", "dep:opendal-http-transport-reqwest", "dep:reqwest", "dep:hmac", "tls"]
+# Shared TLS certificate verification (trust on first use) for FTPS / HTTPS backends.
+tls = ["dep:rustls", "dep:webpki-roots", "dep:rustls-native-certs", "dep:x509-cert"]
 
 [dependencies]
 tokio.workspace = true
@@ -41,8 +43,33 @@ fs4 = "1"
 portable-pty = "0.9"
 tokio-socks = "0.5"
 
+# TLS (ftp, cloud)
+rustls = { workspace = true, optional = true }
+webpki-roots = { version = "1", optional = true }
+rustls-native-certs = { version = "0.8", optional = true }
+x509-cert = { version = "0.2", default-features = false, optional = true }
+
+# FTP / FTPS
+# `deprecated` enables implicit FTPS (`connect_secure_implicit`).
+suppaftp = { version = "12.2", default-features = false, features = ["tokio", "tokio-rustls-ring", "deprecated"], optional = true }
+
+# WebDAV / S3 / Azure / GCS
+opendal = { version = "0.59", default-features = false, features = [
+    "executors-tokio",
+    "layers-retry",
+    "services-webdav",
+    "services-s3",
+    "services-azblob",
+    "services-gcs",
+], optional = true }
+opendal-http-transport-reqwest = { version = "0.59", default-features = false, features = ["rustls-no-provider"], optional = true }
+# 0.13 is what OpenDAL's HTTP transport is built on; TLS is configured by us (ring provider).
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "socks", "stream"], optional = true }
+hmac = { version = "0.12", optional = true }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
+tracing-subscriber.workspace = true
