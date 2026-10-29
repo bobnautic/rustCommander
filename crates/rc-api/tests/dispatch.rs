@@ -198,6 +198,46 @@ async fn contract_shapes() {
         call(&st, "terminal.close", json!({ "id": t["id"] })).await;
     }
 
+    // Remote explorer: SSH sites are targets, other protocols are not.
+    let mut ssh_site = call(&st, "sites.template", json!({ "protocol": "sftp" })).await;
+    ssh_site["name"] = json!("Box");
+    ssh_site["host"] = json!("box.example.org");
+    ssh_site["username"] = json!("me");
+    let ssh_site = call(&st, "sites.save", json!({ "site": ssh_site })).await;
+    let targets = call(&st, "explorer.targets", Value::Null).await;
+    let targets = targets.as_array().unwrap();
+    let t = targets.iter().find(|t| t["siteId"] == ssh_site["id"]).expect("ssh site is a target");
+    assert_eq!(t["id"], format!("site:{}", ssh_site["id"].as_str().unwrap()));
+    assert_eq!(t["source"], "site");
+    assert_eq!(t["port"], 22);
+    assert!(!targets.iter().any(|t| t["siteId"] == saved["id"]), "FTP sites are not explorer targets");
+    let err = dispatch(&st, &Origin::Desktop, "explorer.connect", json!({ "target": "nope:1" })).await.unwrap_err();
+    assert_eq!(err.code, "invalid_input");
+    let err = dispatch(&st, &Origin::Desktop, "explorer.connect", json!({ "address": "ftp://x" })).await.unwrap_err();
+    assert_eq!(err.code, "invalid_input");
+
+    // Read-only preview of the beginning of a file.
+    call(&st, "fs.writeText", json!({ "session": "local", "path": format!("{work}/p.txt"), "content": "grüße\nzwei" }))
+        .await;
+    let p = call(&st, "explorer.preview", json!({ "session": "local", "path": format!("{work}/p.txt") })).await;
+    assert_eq!(p["content"], "grüße\nzwei");
+    assert_eq!(p["truncated"], false);
+    assert_eq!(p["binary"], false);
+    let p =
+        call(&st, "explorer.preview", json!({ "session": "local", "path": format!("{work}/p.txt"), "maxBytes": 4 }))
+            .await;
+    assert_eq!(p["content"], "grü");
+    assert_eq!(p["truncated"], true);
+    assert_eq!(p["size"], 12);
+    std::fs::write(dir.path().join("work/bin.dat"), [1u8, 0, 2, 3]).unwrap();
+    let p = call(&st, "explorer.preview", json!({ "session": "local", "path": format!("{work}/bin.dat") })).await;
+    assert_eq!(p["binary"], true);
+    assert_eq!(p["content"], "");
+    let err = dispatch(&st, &Origin::Desktop, "explorer.preview", json!({ "session": "local", "path": work.clone() }))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, "is_a_directory");
+
     // Vault with master password re-encrypts stored secrets.
     call(&st, "vault.setMasterPassword", json!({ "newPassword": "master" })).await;
     let site_id = saved["id"].as_str().unwrap();

@@ -7,6 +7,7 @@ import { applySettings, removeSession, showDock, upsertSession, useApp, reloadBo
 import { isFinished, removeJob, setJobs, upsertJob, useJobs } from '../store/jobs';
 import { addPrompt, appendLog, removePrompt, setBg, setLog, upsertBg, useNearby, usePrompts, useSearch } from '../store/misc';
 import { initPanels, onSessionClosed, refreshWhere, usePanels } from '../store/panels';
+import { explorerFsChanged, explorerSessionClosed } from '../store/explorer';
 import { adoptTerminals, onTerminalData, onTerminalExit } from '../store/terminals';
 import { toast } from '../store/toasts';
 import { openDialog } from '../store/dialogs';
@@ -50,6 +51,7 @@ export function subscribeEvents() {
     const s = useApp.getState().sessions.find((x) => x.id === id);
     removeSession(id);
     onSessionClosed(id);
+    explorerSessionClosed(id);
     if (reason) toast.warning(tr('session.closedTitle', { name: s?.name ?? id }), reason);
   });
   on('job.updated', onJobUpdated);
@@ -69,7 +71,10 @@ export function subscribeEvents() {
   on('tunnel.updated', (t) => upsertBg('tunnels', t));
   on('discovery.peers', (peers) => useNearby.setState({ peers, refreshing: false }));
   on('server.status', (server) => useNearby.setState({ server }));
-  on('fs.changed', ({ session, path }) => scheduleRefresh(session, path));
+  on('fs.changed', ({ session, path }) => {
+    scheduleRefresh(session, path);
+    explorerFsChanged(session, path);
+  });
   on('log', (e) => appendLog(e));
   onReconnected(() => {
     void loadState(false);

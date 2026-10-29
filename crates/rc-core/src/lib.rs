@@ -28,7 +28,7 @@ pub mod types;
 pub mod vfs;
 pub mod watch;
 
-pub use connect::{connect, ConnectContext};
+pub use connect::{connect, connect_with_shell_fallback, ConnectContext};
 pub use error::{Error, ErrorCode, Result};
 pub use known_hosts::{HostKeyStatus, KnownHosts};
 pub use local::LocalVfs;

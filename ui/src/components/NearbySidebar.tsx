@@ -1,20 +1,20 @@
 import { useRef } from 'react';
 import {
-  Apple, BookmarkPlus, ChevronsLeft, Cpu, ExternalLink, Globe, Lock, LockOpen, Monitor, MoreHorizontal, Plug, Plus, Radar, RefreshCw,
+  Apple, BookmarkPlus, Cpu, ExternalLink, Globe, Lock, LockOpen, Monitor, MoreHorizontal, Plug, Plus, Radar, RefreshCw,
   Server, Settings, Share2, Smartphone, Trash2, WifiOff, Laptop, Copy,
 } from 'lucide-react';
 import type { Peer } from '../api/types';
 import { call } from '../api/client';
 import { useT } from '../i18n';
 import { formatRelative } from '../lib/format';
-import { setLayout, useApp } from '../store/app';
+import { useApp } from '../store/app';
 import { openDialog, openSingleton } from '../store/dialogs';
 import { useNearby } from '../store/misc';
 import { attempt } from '../store/toasts';
 import { askConnectPeer, openPeerWebUi, savePeerAsSite } from '../actions/sessions';
 import { copyText } from '../actions/fileOps';
 import { showContextMenu, type MenuItem } from './Menu';
-import { Splitter } from './Splitter';
+import { SidebarClose, SidebarSwitch } from './SidebarSwitch';
 import { Badge, Button, IconButton, cx } from './ui';
 
 function osIcon(os: string) {
@@ -167,14 +167,11 @@ function SelfCard({ peer }: { peer: Peer | undefined }) {
   );
 }
 
-export function NearbySidebar() {
+export function NearbyView() {
   const t = useT();
   const peers = useNearby((s) => s.peers);
   const discovery = useNearby((s) => s.discovery);
   const refreshing = useNearby((s) => s.refreshing);
-  const width = useApp((s) => s.sidebarWidth);
-  const narrow = useApp((s) => s.narrow);
-  const startW = useRef(width);
   const self = peers.find((p) => p.self);
   const others = peers.filter((p) => !p.self).sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name));
 
@@ -190,14 +187,13 @@ export function NearbySidebar() {
   };
 
   return (
-    <aside className="sidebar" style={narrow ? undefined : { width }} data-testid="nearby">
+    <div className="sidebar-view" data-testid="nearby">
       <div className="sidebar-head">
-        <Radar size={15} className="accent" />
-        <h3>{t('nearby.title')}</h3>
+        <SidebarSwitch />
         <div className="flex1" />
         <IconButton icon={RefreshCw} size={14} title={t('nearby.refresh')} className={refreshing ? 'spinning' : undefined} onClick={() => void refresh()} />
         <IconButton icon={Plus} size={15} title={t('nearby.addByAddress')} onClick={() => openDialog('addPeer', {})} />
-        <IconButton icon={ChevronsLeft} size={15} title={t('common.close')} onClick={() => setLayout({ sidebarOpen: false })} />
+        <SidebarClose />
       </div>
       <div className="sidebar-status">
         {discovery?.enabled ? (
@@ -227,15 +223,6 @@ export function NearbySidebar() {
           others.map((p) => <PeerCard key={p.id} peer={p} />)
         )}
       </div>
-      {!narrow && (
-        <Splitter
-          axis="x"
-          className="sidebar-splitter"
-          label={t('nearby.resize')}
-          onStart={() => (startW.current = useApp.getState().sidebarWidth)}
-          onDrag={(d) => setLayout({ sidebarWidth: Math.max(220, Math.min(480, startW.current + d)) })}
-        />
-      )}
-    </aside>
+    </div>
   );
 }

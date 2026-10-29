@@ -199,6 +199,45 @@ try {
     await snap(page, 'nearby.png');
   });
 
+  await step('remote explorer: ~/.ssh/config host, tree, preview, shell fallback', async () => {
+    await page.locator('[data-testid="sidebar-tab-explorer"]').click();
+    const xp = page.locator('[data-testid="explorer"]');
+    await xp.waitFor();
+    const target = (id) => xp.locator(`[data-testid="xp-target"][data-target="${id}"]`);
+    await target('ssh:build-box').waitFor();
+    assert(await target('site:site-web01').count(), 'saved SFTP site missing');
+    assert(!(await xp.locator('[data-testid="xp-target"]', { hasText: 'internal' }).count()), 'wildcard host listed');
+    await target('ssh:build-box').click();
+    const prompt = dialog('Unknown host key');
+    await prompt.waitFor();
+    await prompt.locator('[data-testid="prompt-accept-once"]').click();
+    const entry = (path) => xp.locator(`[data-testid="xp-entry"][data-path="${path}"]`);
+    await entry('/home/ci/app').click();
+    await entry('/home/ci/app/docker-compose.yml').click();
+    await xp.locator('[data-testid="xp-preview"] pre', { hasText: 'services:' }).waitFor();
+    assert((await xp.locator('[data-testid="xp-path"]').innerText()) === '/home/ci/app/docker-compose.yml', 'details show the wrong path');
+    await page.locator('[data-testid="session-tab"]', { hasText: 'build-box' }).waitFor();
+    // keyboard: Left collapses the focused folder's parent chain, Up/Down move
+    await xp.locator('[data-testid="xp-tree"]').focus();
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('ArrowLeft');
+    await entry('/home/ci/app/docker-compose.yml').waitFor({ state: 'detached' });
+    await snap(page, 'remote-explorer.png');
+    // a server without SFTP is listed through shell commands
+    await target('ssh:router').click();
+    await prompt.waitFor();
+    await prompt.locator('[data-testid="prompt-accept-once"]').click();
+    await target('ssh:router').locator('.badge', { hasText: 'Shell' }).waitFor();
+    await entry('/home/root/deploy.log').waitFor();
+    // Ctrl+Shift+E toggles the explorer; the Nearby button switches back
+    await page.keyboard.press('Control+Shift+E');
+    await xp.waitFor({ state: 'detached' });
+    await page.keyboard.press('Control+Shift+E');
+    await xp.waitFor();
+    await page.locator('[data-testid="tb-nearby"]').click();
+    await page.locator('[data-testid="nearby"]').waitFor();
+  });
+
   await step('terminal opens and echoes', async () => {
     await page.locator('[data-testid="tb-terminal"]').click();
     const term = page.locator('.term-pane:not(.hidden) .xterm');

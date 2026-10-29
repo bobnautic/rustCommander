@@ -83,10 +83,14 @@ pub fn from_openssh_config(content: &str) -> Vec<SiteConfig> {
 
 /// Read `~/.ssh/config`.
 pub fn read_openssh_config() -> Result<Vec<SiteConfig>> {
+    Ok(from_openssh_config(&read_openssh_config_text()?))
+}
+
+/// The text of `~/.ssh/config`.
+pub fn read_openssh_config_text() -> Result<String> {
     let home = directories::UserDirs::new().ok_or_else(|| Error::other("no home directory"))?;
     let path = home.home_dir().join(".ssh").join("config");
-    let content = std::fs::read_to_string(&path).map_err(|e| Error::io_at(e, &path.display().to_string()))?;
-    Ok(from_openssh_config(&content))
+    std::fs::read_to_string(&path).map_err(|e| Error::io_at(e, &path.display().to_string()))
 }
 
 fn url_decode(s: &str) -> String {

@@ -15,7 +15,7 @@ use rc_core::sync::SyncParams;
 use rc_core::tunnel::{TunnelKind, TunnelSpec};
 use rc_core::{Error, Protocol};
 
-use crate::handlers::{discovery, edit, fs, jobs, misc, sessions, terminal};
+use crate::handlers::{discovery, edit, explorer, fs, jobs, misc, sessions, terminal};
 use crate::server::ServerStatus;
 use crate::settings::Settings;
 use crate::state::{AppState, Bookmark, CustomCommand, Origin};
@@ -254,6 +254,11 @@ pub async fn dispatch(state: &Arc<AppState>, origin: &Origin, method: &str, para
             let p: Id = parse(params)?;
             ok(sessions::info(st, &p.id)?)
         }
+
+        // ---------------------------------------------------------- remote explorer
+        "explorer.targets" => ok(explorer::targets(st)),
+        "explorer.connect" => ok(explorer::connect(st, parse(params)?).await?),
+        "explorer.preview" => ok(explorer::preview(st, parse(params)?).await?),
 
         // ---------------------------------------------------------- fs
         "fs.list" => ok(fs::list(st, parse(params)?).await?),

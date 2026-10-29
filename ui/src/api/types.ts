@@ -137,6 +137,28 @@ export interface SessionSummary {
 
 export interface SessionInfo { items: [string, string][] }
 
+// ---------------------------------------------------------------- remote explorer
+
+/** An SSH host the remote explorer can browse: a saved SFTP/SCP site or a `~/.ssh/config` Host. */
+export interface ExplorerTarget {
+  /** 'site:<site id>' or 'ssh:<Host alias>'. */
+  id: string;
+  source: 'site' | 'sshConfig';
+  name: string;
+  folder: string;
+  protocol: Protocol;
+  host: string;
+  port: number;
+  username: string;
+  siteId?: string | null;
+  /** Name of the jump host (ProxyJump). */
+  jump?: string | null;
+  color?: string | null;
+}
+
+/** The beginning of a file, read into memory only (nothing is stored or copied). */
+export interface FilePreview { path: string; content: string; size: number; binary: boolean; truncated: boolean }
+
 // ---------------------------------------------------------------- transfers & jobs
 
 export type OverwriteMode = 'ask' | 'overwrite' | 'skip' | 'newer' | 'differentSize' | 'resume' | 'rename';
@@ -456,6 +478,13 @@ export interface RpcMethods {
   'session.close': [{ id: string }, null];
   'session.reconnect': [{ id: string }, SessionSummary];
   'session.info': [{ id: string }, SessionInfo];
+
+  'explorer.targets': [Empty, ExplorerTarget[]];
+  /** Connect to a target (or an ad-hoc `user@host[:port]`). An SFTP server that cannot run
+   * SFTP is browsed through shell commands instead (the session's protocol is then 'scp'). */
+  'explorer.connect': [{ target?: string; address?: string; password?: string | null }, SessionSummary];
+  /** First `maxBytes` (default 64 KiB, max 1 MiB) of a regular file. */
+  'explorer.preview': [{ session: string; path: string; maxBytes?: number }, FilePreview];
 
   'fs.list': [{ session: string; path: string }, { path: string; entries: FileEntry[] }];
   'fs.home': [{ session: string }, string];

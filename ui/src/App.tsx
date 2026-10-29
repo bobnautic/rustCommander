@@ -18,7 +18,7 @@ import { SessionTabs } from './components/SessionTabs';
 import { Panel, SessionDot } from './components/panel/Panel';
 import { Splitter } from './components/Splitter';
 import { Dock } from './components/dock/Dock';
-import { NearbySidebar } from './components/NearbySidebar';
+import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
 import { DialogHost } from './components/DialogHost';
 import { PromptHost } from './components/PromptHost';
@@ -140,7 +140,7 @@ function Workbench() {
         {sidebarOpen && (
           <>
             {narrow && <div className="sidebar-backdrop" onClick={() => setLayout({ sidebarOpen: false })} />}
-            <NearbySidebar />
+            <Sidebar />
           </>
         )}
         <div className="workspace">
