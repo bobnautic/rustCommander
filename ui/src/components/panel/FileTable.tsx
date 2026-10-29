@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { create } from 'zustand';
 import { ArrowDown, ArrowUp, CornerLeftUp, FolderOpen, Link2, LockKeyhole, RefreshCw, SearchX, ServerCrash, Unplug, Upload } from 'lucide-react';
 import type { FileEntry } from '../../api/types';
@@ -10,19 +10,16 @@ import * as P from '../../lib/paths';
 import { load, save } from '../../lib/storage';
 import { setActiveSide, useApp } from '../../store/app';
 import {
-  allRows, getPanel, goHome, goUp, invertSelection, other, PARENT, patchPanel, refresh, selectAll, selectNone, selectRange,
+  allRows, goHome, goUp, invertSelection, other, PARENT, patchPanel, refresh, selectAll, selectNone, selectRange,
   setCursor, setSort, toggleSelected, usePanels, type CompareMark, type Side, type SortKey,
 } from '../../store/panels';
 import * as ops from '../../actions/fileOps';
 import { reconnectSession } from '../../actions/sessions';
 import { showContextMenu } from '../Menu';
 import { buildPanelMenu } from './panelMenu';
+import { armPointerDrag, usePanelDrag } from './panelDrag';
 import { Button, cx, EmptyState, Spinner } from '../ui';
 
-export const RC_MIME = 'application/x-rcmd-files';
-
-/** Drag in progress between panels (dataTransfer can't be read during dragover). */
-let currentDrag: { side: Side; names: string[] } | null = null;
 
 // ---------------------------------------------------------------- column widths (shared by both panels)
 
@@ -73,24 +70,24 @@ interface RowProps {
   renaming: boolean;
   cmp?: CompareMark;
   dropTarget: boolean;
+  dragging: boolean;
   sizeFormat: 'auto' | 'bytes';
   side: Side;
   t: TFn;
 }
 
-const Row = memo(function Row({ entry: e, top, cursor, selected, renaming, cmp, dropTarget, sizeFormat, side, t }: RowProps) {
+const Row = memo(function Row({ entry: e, top, cursor, selected, renaming, cmp, dropTarget, dragging, sizeFormat, side, t }: RowProps) {
   const parent = e.name === PARENT;
   const cat = parent ? 'dir' : categoryOf(e);
   const Icon = parent ? CornerLeftUp : CATEGORY_ICON[cat];
   const dirLike = parent || isDirLike(e);
   return (
     <div
-      className={cx('ft-row', cursor && 'cursor', selected && 'selected', e.hidden && 'is-hidden', cmp && `cmp-${cmp}`, dropTarget && 'drop-target', dirLike && 'is-dir')}
+      className={cx('ft-row', cursor && 'cursor', selected && 'selected', e.hidden && 'is-hidden', cmp && `cmp-${cmp}`, dropTarget && 'drop-target', dragging && 'dragging', dirLike && 'is-dir')}
       style={{ transform: `translateY(${top}px)` }}
       data-name={e.name}
       role="row"
       aria-selected={selected}
-      draggable={!parent && !renaming}
       title={cmp ? t(CMP_KEYS[cmp]) : undefined}
     >
       <div className="ft-cell col-name" role="gridcell">
@@ -201,8 +198,12 @@ export function FileTable({ side, active }: { side: Side; active: boolean }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewH, setViewH] = useState(400);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState<false | 'internal' | 'files'>(false);
+  // browser file drops (web mode) use HTML5 DnD; panel-to-panel drags use pointer events (panelDrag.ts)
+  const [fileDropDir, setFileDropDir] = useState<string | null>(null);
+  const [filesOver, setFilesOver] = useState(false);
+  const drag = usePanelDrag((s) => s.drag);
+  const dragTarget = drag?.target?.kind === 'panel' && drag.target.side === side ? drag.target : null;
+  const draggedHere = drag && drag.side === side ? drag.names : null;
   const [typeahead, setTypeahead] = useState('');
   const typeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showSpinner, setShowSpinner] = useState(false);
@@ -449,93 +450,52 @@ export function FileTable({ side, active }: { side: Side; active: boolean }) {
 
   // ------------------------------------------------ drag & drop
 
-  const onDragStart = (e: DragEvent) => {
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('.ft-rename')) return;
     const entry = rowFromEvent(e);
-    if (!entry || entry.name === PARENT) return;
-    let names: string[];
-    if (p.selected.has(entry.name)) names = rows.filter((r) => p.selected.has(r.name)).map((r) => r.name);
-    else {
-      names = [entry.name];
-      patchPanel(side, { cursor: entry.name, selected: new Set() });
-    }
-    currentDrag = { side, names };
-    e.dataTransfer.effectAllowed = 'copyMove';
-    e.dataTransfer.setData(RC_MIME, JSON.stringify({ side, names }));
-    e.dataTransfer.setData('text/plain', names.map((n) => P.join(p.path, n)).join('\n'));
-    const ghost = document.createElement('div');
-    ghost.className = 'drag-ghost';
-    ghost.textContent = names.length === 1 ? names[0] : t('dnd.items', { n: names.length });
-    document.body.appendChild(ghost);
-    e.dataTransfer.setDragImage(ghost, -10, -6);
-    setTimeout(() => ghost.remove(), 0);
+    if (!entry || entry.name === PARENT || p.renaming) return;
+    armPointerDrag(e.nativeEvent, e.currentTarget, side, entry.name);
   };
 
-  const onDragEnd = () => {
-    currentDrag = null;
-  };
-
-  const dropDirFor = (e: DragEvent): FileEntry | null => {
+  const fileDropDirFor = (e: DragEvent): FileEntry | null => {
     const entry = rowFromEvent(e);
     if (!entry || entry.name === PARENT || !isDirLike(entry)) return null;
-    if (currentDrag && currentDrag.side === side && currentDrag.names.includes(entry.name)) return null;
     return entry;
   };
 
+  const acceptsFiles = (e: DragEvent) => mode !== 'desktop' && Array.from(e.dataTransfer.types).includes('Files');
+
   const onDragOver = (e: DragEvent) => {
-    const types = Array.from(e.dataTransfer.types);
-    const internal = types.includes(RC_MIME) && currentDrag;
-    const files = types.includes('Files') && mode !== 'desktop';
-    if (!internal && !files) return;
-    const target = dropDirFor(e);
-    if (internal && currentDrag!.side === side && !target) {
-      e.dataTransfer.dropEffect = 'none';
-      setDropTarget(null);
-      setDragOver(false);
-      return;
-    }
+    if (!acceptsFiles(e)) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = internal ? (e.shiftKey ? 'move' : 'copy') : 'copy';
-    setDropTarget(target?.name ?? null);
-    setDragOver(internal ? 'internal' : 'files');
+    e.dataTransfer.dropEffect = 'copy';
+    setFileDropDir(fileDropDirFor(e)?.name ?? null);
+    setFilesOver(true);
   };
 
   const onDragLeave = (e: DragEvent) => {
     if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
-      setDropTarget(null);
-      setDragOver(false);
+      setFileDropDir(null);
+      setFilesOver(false);
     }
   };
 
   const onDrop = (e: DragEvent) => {
-    const target = dropDirFor(e);
-    setDropTarget(null);
-    setDragOver(false);
+    setFileDropDir(null);
+    setFilesOver(false);
+    if (!acceptsFiles(e)) return;
+    e.preventDefault();
+    const target = fileDropDirFor(e);
     const dstDir = target ? target.path || P.join(p.path, target.name) : p.path;
-    const raw = e.dataTransfer.getData(RC_MIME);
-    if (raw) {
-      e.preventDefault();
-      try {
-        const d = JSON.parse(raw) as { side: Side; names: string[] };
-        const src = getPanel(d.side);
-        const entries = src.entries.filter((x) => d.names.includes(x.name));
-        if (d.side === side && !target) return;
-        setActiveSide(side);
-        ops.copyEntries(d.side, entries, e.shiftKey, { dstSide: side, dstDir });
-      } catch {
-        /* ignore */
-      }
-      currentDrag = null;
-      return;
-    }
-    if (e.dataTransfer.types.includes('Files') && mode !== 'desktop') {
-      e.preventDefault();
-      void (async () => {
-        const web = await import('../../api/web');
-        const entries = web.entriesFromDataTransfer(e.dataTransfer);
-        const set = entries ? await web.collectEntries(entries) : web.collectFileList(e.dataTransfer.files);
-        await web.uploadToSession(p.session, dstDir, set);
-      })();
-    }
+    // the entries must be grabbed synchronously inside the event handler
+    const dt = e.dataTransfer;
+    void (async () => {
+      const web = await import('../../api/web');
+      const entries = web.entriesFromDataTransfer(dt);
+      const files = entries ? null : Array.from(dt.files);
+      const set = entries ? await web.collectEntries(entries) : web.collectFileList(files ?? []);
+      await web.uploadToSession(p.session, dstDir, set);
+    })();
   };
 
   // ------------------------------------------------ render
@@ -563,15 +523,14 @@ export function FileTable({ side, active }: { side: Side; active: boolean }) {
       </div>
       <div
         ref={bodyRef}
-        className={cx('ft-body', dragOver && 'drag-over', dragOver === 'files' && 'drag-files')}
+        className={cx('ft-body', (filesOver || dragTarget) && 'drag-over', filesOver && 'drag-files')}
         tabIndex={0}
         onScroll={(e) => setScrollTop((e.target as HTMLElement).scrollTop)}
         onKeyDown={onKeyDown}
         onClick={onClick}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
+        onPointerDown={onPointerDown}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
@@ -588,7 +547,8 @@ export function FileTable({ side, active }: { side: Side; active: boolean }) {
                 selected={p.selected.has(r.name)}
                 renaming={p.renaming === r.name}
                 cmp={p.compare?.[r.name]}
-                dropTarget={dropTarget === r.name}
+                dropTarget={dragTarget?.dir === r.name || fileDropDir === r.name}
+                dragging={!!draggedHere && draggedHere.includes(r.name)}
                 sizeFormat={sizeFormat}
                 side={side}
                 t={t}
@@ -640,10 +600,10 @@ export function FileTable({ side, active }: { side: Side; active: boolean }) {
             <Spinner size={18} />
           </div>
         )}
-        {dragOver === 'files' && (
+        {filesOver && (
           <div className="ft-dropzone">
             <Upload size={22} />
-            <span>{t('web.dropToUpload', { path: dropTarget ? P.join(p.path, dropTarget) : p.path })}</span>
+            <span>{t('web.dropToUpload', { path: fileDropDir ? P.join(p.path, fileDropDir) : p.path })}</span>
           </div>
         )}
         {typeahead && (

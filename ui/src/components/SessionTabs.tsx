@@ -7,6 +7,7 @@ import { showContextMenu } from './Menu';
 import { PROTOCOL_ICON } from './panel/Panel';
 import { cx } from './ui';
 import { copyText } from '../actions/fileOps';
+import { usePanelDrag } from './panel/panelDrag';
 
 export function SessionTabs() {
   const t = useT();
@@ -14,6 +15,7 @@ export function SessionTabs() {
   const left = usePanels((s) => s.left.session);
   const right = usePanels((s) => s.right.session);
   const connecting = useConnecting((s) => s.items);
+  const dropSession = usePanelDrag((s) => (s.drag?.target?.kind === 'session' ? s.drag.target.session : null));
   const remotes = sessions.filter((s) => s.id !== 'local');
 
   return (
@@ -27,7 +29,8 @@ export function SessionTabs() {
             role="tab"
             aria-selected={shown}
             tabIndex={0}
-            className={cx('session-tab', shown && 'on')}
+            className={cx('session-tab', shown && 'on', dropSession === s.id && 'drop-target')}
+            data-session-tab={s.id}
             style={s.color ? { ['--tab-color' as string]: s.color } : undefined}
             title={`${s.url}\n${s.username ? s.username + '@' : ''}${s.host}`}
             data-testid="session-tab"

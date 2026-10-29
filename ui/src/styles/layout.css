@@ -159,6 +159,7 @@ body.resizing-col, body.resizing-col * { cursor: col-resize !important; user-sel
 }
 .session-tab:hover .session-tab-close, .session-tab.on .session-tab-close { opacity: 1; }
 .session-tab-close:hover { background: var(--border); color: var(--text); }
+.session-tab.drop-target { background: var(--accent-weak-2); border-color: var(--accent); color: var(--text); }
 .session-tab.connecting { cursor: default; color: var(--muted); font-style: italic; padding-right: 10px; }
 .session-tab-add {
   display: inline-flex;

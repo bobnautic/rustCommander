@@ -335,10 +335,44 @@ try {
     await kp.keyboard.press('Escape');
   });
 
-  await step('drag & drop between panels opens the copy dialog', async () => {
-    await krow('notes.txt').dragTo(kp.locator('[data-testid="table-right"]'));
-    await kdialog('Copy').waitFor({ timeout: 4000 });
+  // panel-to-panel drags use pointer events (HTML5 DnD is unavailable in WebView2 with dragDropEnabled)
+  async function pointerDrag(from, to, { shift = false, cancel = false } = {}) {
+    const a = await from.boundingBox();
+    const b = await to.boundingBox();
+    await kp.mouse.move(a.x + 30, a.y + a.height / 2);
+    await kp.mouse.down();
+    await kp.mouse.move(a.x + 50, a.y + a.height / 2 + 8, { steps: 3 });
+    await kp.mouse.move(b.x + Math.min(b.width / 2, 120), b.y + Math.min(b.height / 2, 60), { steps: 8 });
+    await kp.locator('[data-testid="drag-ghost"]').waitFor();
+    if (shift) await kp.keyboard.down('Shift');
+    if (cancel) await kp.keyboard.press('Escape');
+    await kp.mouse.up();
+    if (shift) await kp.keyboard.up('Shift');
+    await kp.locator('[data-testid="drag-ghost"]').waitFor({ state: 'detached' });
+  }
+
+  await step('pointer drag & drop: copy, Shift = move, onto a folder, Esc cancels', async () => {
+    await krow('notes.txt').click();
+    await krow('backup-2026-10-01.tar.gz').click({ modifiers: ['Control'] });
+    await pointerDrag(krow('notes.txt'), kp.locator('[data-testid="table-right"]'));
+    let dlg = kdialog('Copy');
+    await dlg.waitFor({ timeout: 4000 });
+    assert((await dlg.innerText()).includes('2 items'), 'drag did not carry both selected files');
     await kp.keyboard.press('Escape');
+    await dlg.waitFor({ state: 'detached' });
+    await pointerDrag(krow('notes.txt'), kp.locator('[data-testid="table-right"]'), { shift: true });
+    dlg = kdialog('Move');
+    await dlg.waitFor({ timeout: 4000 });
+    await kp.keyboard.press('Escape');
+    await pointerDrag(krow('notes.txt'), kp.locator('[data-testid="table-right"] .ft-row[data-name="Documents"]'));
+    dlg = kdialog('Copy');
+    await dlg.waitFor({ timeout: 4000 });
+    const target = await dlg.locator('[data-testid="copy-target"]').inputValue();
+    assert(target === '/home/demo/Documents', `drop onto a folder targets "${target}"`);
+    await kp.keyboard.press('Escape');
+    await pointerDrag(krow('notes.txt'), kp.locator('[data-testid="table-right"]'), { cancel: true });
+    await kp.waitForTimeout(300);
+    assert((await kp.locator('.dlg').count()) === 0, 'Esc did not cancel the drag');
   });
 
   await step('password prompt for a site without a saved password', async () => {
@@ -351,6 +385,17 @@ try {
     await kp.locator('[data-testid="prompt-input"]').fill('secret');
     await kp.keyboard.press('Enter');
     await kp.locator('[data-testid="session-tab"]', { hasText: 'staging' }).waitFor();
+  });
+
+  await step('pointer drag onto a session tab targets that session', async () => {
+    await krow('notes.txt').waitFor();
+    await pointerDrag(krow('notes.txt'), kp.locator('[data-testid="session-tab"]', { hasText: 'staging' }));
+    const dlg = kdialog('Copy');
+    await dlg.waitFor({ timeout: 4000 });
+    const target = await dlg.locator('[data-testid="copy-target"]').inputValue();
+    assert(target === '/var/www/html', `tab drop targets "${target}"`);
+    assert((await dlg.innerText()).includes('staging'), 'copy dialog does not show the staging session');
+    await kp.keyboard.press('Escape');
   });
   await kctx.close();
 }

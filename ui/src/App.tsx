@@ -26,6 +26,7 @@ import { ConflictHost } from './components/ConflictHost';
 import { ContextMenuHost } from './components/Menu';
 import { Toasts } from './components/Toasts';
 import { EditorHost } from './components/editor/EditorHost';
+import { DragGhost } from './components/panel/DragGhost';
 import { LoginScreen } from './components/LoginScreen';
 import { Button, Spinner, cx } from './components/ui';
 
@@ -173,6 +174,7 @@ function Workbench() {
       <ConflictHost />
       <PromptHost />
       <ContextMenuHost />
+      <DragGhost />
     </div>
   );
 }
