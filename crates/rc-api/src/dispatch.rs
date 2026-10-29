@@ -259,6 +259,30 @@ pub async fn dispatch(state: &Arc<AppState>, origin: &Origin, method: &str, para
         "fs.createFile" => ok(fs::create_file(st, parse(params)?).await?),
         "fs.rename" => ok(fs::rename(st, parse(params)?).await?),
         "fs.delete" => ok(fs::delete(st, parse(params)?)?),
+        // Synchronous removal of a single path (used by Rust Commander peers).
+        "fs.remove" => {
+            #[derive(Deserialize)]
+            struct P {
+                session: String,
+                path: String,
+                #[serde(default)]
+                recursive: bool,
+            }
+            let p: P = parse(params)?;
+            let vfs = st.vfs(&p.session)?;
+            let e = vfs.stat(&p.path).await?;
+            if e.kind == rc_core::FileKind::Dir {
+                if p.recursive {
+                    vfs.remove_dir_all(&p.path).await?;
+                } else {
+                    vfs.remove_dir(&p.path).await?;
+                }
+            } else {
+                vfs.remove_file(&p.path).await?;
+            }
+            st.emit_changed(&p.session, &rc_core::path::parent(&p.path));
+            ok(Value::Null)
+        }
         "fs.setAttributes" => ok(fs::set_attributes(st, parse(params)?).await?),
         "fs.symlink" => ok(fs::symlink(st, parse(params)?).await?),
         "fs.readText" => ok(fs::read_text(st, parse(params)?).await?),
