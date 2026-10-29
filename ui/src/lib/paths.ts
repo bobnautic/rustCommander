@@ -8,7 +8,8 @@ export function isDrivePath(p: string): boolean {
 
 export function normalize(p: string): string {
   if (!p) return '/';
-  let s = p.replace(/\\/g, '/').replace(/\/{2,}/g, '/');
+  // '\\' separates only in Windows drive paths; POSIX file names may contain it.
+  let s = (DRIVE_RE.test(p) ? p.replace(/\\/g, '/') : p).replace(/\/{2,}/g, '/');
   if (DRIVE_RE.test(s)) {
     if (s.length === 2) return s + '/';
   } else if (!s.startsWith('/')) {
@@ -22,9 +23,11 @@ export function isRoot(p: string): boolean {
   return p === '/' || p === '' || /^[A-Za-z]:\/?$/.test(p);
 }
 
-/** Parent directory, or null when `p` is a root. */
+/** Parent directory, or null when `p` is `/`. The parent of a drive root (`C:/`) is `/`,
+ * which lists the drives (as on the backend). */
 export function parent(p: string): string | null {
   const n = normalize(p);
+  if (DRIVE_RE.test(n) && isRoot(n)) return '/';
   if (isRoot(n)) return null;
   const i = n.lastIndexOf('/');
   if (i <= 0) return '/';
@@ -58,7 +61,8 @@ export function isAbsolute(p: string): boolean {
 
 /** Resolve user input (absolute or relative, with `.`/`..`) against `base`. `~` = `home`. */
 export function resolve(base: string, input: string, home?: string): string {
-  let s = input.trim().replace(/\\/g, '/');
+  let s = input.trim();
+  if (DRIVE_RE.test(s) || DRIVE_RE.test(base)) s = s.replace(/\\/g, '/');
   if (!s) return normalize(base);
   if (home && (s === '~' || s.startsWith('~/'))) s = home + s.slice(1);
   const abs = isAbsolute(s) ? s : join(base, s);

@@ -703,8 +703,11 @@ impl Conn {
             } else {
                 e.target_kind = Some(FileKind::File);
                 if size {
-                    if let Ok(n) = self.ftp.size(&e.path).await {
-                        e.size = n as u64;
+                    match self.ftp.size(&e.path).await {
+                        Ok(n) => e.size = n as u64,
+                        // A dead connection must not go back to the pool.
+                        Err(err) if is_fatal(&err) => return Err(self.fail(err, &e.path)),
+                        Err(_) => {}
                     }
                 }
             }
@@ -756,8 +759,10 @@ impl Conn {
                     let mut e = FileEntry::new(name, path, FileKind::File);
                     e.size = n as u64;
                     if shared.info().feat.mdtm {
-                        if let Ok(t) = self.ftp.mdtm(path).await {
-                            e.modified = Some(t.and_utc().timestamp());
+                        match self.ftp.mdtm(path).await {
+                            Ok(t) => e.modified = Some(t.and_utc().timestamp()),
+                            Err(err) if is_fatal(&err) => return Err(self.fail(err, path)),
+                            Err(_) => {}
                         }
                     }
                     return Ok(e);

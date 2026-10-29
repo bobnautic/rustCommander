@@ -39,7 +39,13 @@ pub fn run() {
                         Ok(ev) => {
                             let _ = ev_handle.emit("rc-event", &ev);
                         }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            // Events were dropped: let the UI reload its state.
+                            tracing::warn!("webview lagged behind by {n} events");
+                            let resync =
+                                rc_api::events::Event { name: "resync".into(), payload: serde_json::Value::Null };
+                            let _ = ev_handle.emit("rc-event", &resync);
+                        }
                         Err(_) => break,
                     }
                 }

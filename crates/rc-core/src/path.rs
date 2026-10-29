@@ -32,8 +32,12 @@ pub fn is_drive_path(p: &str) -> bool {
 }
 
 /// Normalize separators, collapse `//`, resolve `.` and `..` lexically.
+///
+/// `\` is a separator only in Windows drive paths (`C:\Users`). Elsewhere it is an ordinary
+/// character: POSIX servers allow it in file names (`system-systemd\x2dfsck.slice`), and
+/// treating it as a separator would make `..\..\x` point to a different file.
 pub fn normalize(p: &str) -> String {
-    let p = p.replace('\\', "/");
+    let p = if is_drive_path(p) { p.replace('\\', "/") } else { p.to_string() };
     let (prefix, rest) =
         if is_drive_path(&p) { (p[..2].to_ascii_uppercase(), &p[2..]) } else { (String::new(), p.as_str()) };
     let absolute = rest.starts_with('/') || !prefix.is_empty();
@@ -88,8 +92,9 @@ pub fn parent(p: &str) -> String {
 
 /// Last path component (`""` for the root).
 pub fn file_name(p: &str) -> &str {
-    let t = p.trim_end_matches(['/', '\\']);
-    match t.rfind(['/', '\\']) {
+    let seps: &[char] = if is_drive_path(p) { &['/', '\\'] } else { &['/'] };
+    let t = p.trim_end_matches(seps);
+    match t.rfind(seps) {
         Some(i) => &t[i + 1..],
         None => {
             if is_drive_path(t) {
@@ -171,5 +176,14 @@ mod tests {
         assert_eq!(relative_to("/a/b/c", "/a"), Some("b/c".into()));
         assert_eq!(relative_to("/ab", "/a"), None);
         assert_eq!(numbered_name("f.txt", 2), "f (2).txt");
+        assert_eq!(file_name("C:\\Users\\me"), "me");
+    }
+
+    #[test]
+    fn backslashes_in_posix_names() {
+        assert_eq!(join("/run/systemd", "a\\x2db.slice"), "/run/systemd/a\\x2db.slice");
+        assert_eq!(join("/home/u/dir", "..\\..\\x"), "/home/u/dir/..\\..\\x");
+        assert_eq!(file_name("/home/u/dir/..\\..\\x"), "..\\..\\x");
+        assert_eq!(parent("/home/u/a\\b"), "/home/u");
     }
 }

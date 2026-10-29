@@ -186,7 +186,8 @@ export function targets(side: Side): FileEntry[] {
   const rows = viewRows(p, showHidden());
   if (p.selected.size) return rows.filter((e) => p.selected.has(e.name));
   if (p.cursor && p.cursor !== PARENT) {
-    const e = p.entries.find((x) => x.name === p.cursor);
+    // Only visible rows: a cursor left on an entry the filter hides must not be acted on.
+    const e = rows.find((x) => x.name === p.cursor);
     if (e) return [e];
   }
   return [];
@@ -196,7 +197,7 @@ export function focusedEntry(side: Side): FileEntry | null {
   const p = getPanel(side);
   if (!p.cursor) return null;
   if (p.cursor === PARENT) return parentEntry(p);
-  return p.entries.find((e) => e.name === p.cursor) ?? null;
+  return viewRows(p, showHidden()).find((e) => e.name === p.cursor) ?? null;
 }
 
 // ---------------------------------------------------------------- loading & navigation
@@ -345,8 +346,7 @@ export async function goBack(side: Side) {
   const back = p.back.slice(0, -1);
   const fwd = [...p.fwd, { session: p.session, path: p.path }];
   patch(side, { back, fwd });
-  const ok = await navigate(side, loc.session, loc.path, { history: false, select: undefined });
-  if (!ok) patch(side, { back, fwd });
+  await navigate(side, loc.session, loc.path, { history: false, select: undefined });
 }
 
 export async function goForward(side: Side) {
@@ -483,15 +483,35 @@ export function toggleSelected(side: Side, name: string) {
 
 export function selectRange(side: Side, from: string | null, to: string, additive: boolean) {
   const p = getPanel(side);
+  const set = rangeSet(p, from, to, additive ? p.selected : new Set<string>());
+  patch(side, { selected: set, cursor: to });
+}
+
+function rangeSet(p: PanelState, from: string | null, to: string, base: ReadonlySet<string>): Set<string> {
   const rows = allRows(p, showHidden());
   const idx = (n: string | null) => rows.findIndex((r) => r.name === n);
   let a = idx(from);
   const b = idx(to);
   if (a < 0) a = b;
   const [lo, hi] = a <= b ? [a, b] : [b, a];
-  const set = additive ? new Set(p.selected) : new Set<string>();
+  const set = new Set(base);
   for (let i = lo; i <= hi; i++) if (rows[i] && rows[i].name !== PARENT) set.add(rows[i].name);
-  patch(side, { selected: set, cursor: to });
+  return set;
+}
+
+/** The selection before the current Shift+arrow run, so moving back shrinks the range. */
+const rangeRuns: Partial<Record<Side, { anchor: string | null; base: Set<string>; result: Set<string> }>> = {};
+
+/** Shift+arrow: select from the anchor to `to`, on top of what was selected before the run. */
+export function extendRange(side: Side, to: string) {
+  const p = getPanel(side);
+  const anchor = p.anchor ?? p.cursor;
+  const prev = rangeRuns[side];
+  // A new run starts when the anchor moved or the selection was changed another way.
+  const base = prev && prev.anchor === anchor && prev.result === p.selected ? prev.base : new Set(p.selected);
+  const set = rangeSet(p, anchor, to, base);
+  rangeRuns[side] = { anchor, base, result: set };
+  patch(side, { selected: set, cursor: to, anchor });
 }
 
 export function selectAll(side: Side) {

@@ -9,7 +9,7 @@ import { formatBytes, fromDatetimeLocal, parseSize } from '../../lib/format';
 import { load, save } from '../../lib/storage';
 import { reloadCommands, showDock, useApp } from '../../store/app';
 import type { DialogPropsMap } from '../../store/dialogs';
-import { removeBg, upsertBg, useBg, useNearby, useSearch } from '../../store/misc';
+import { beginSearch, removeBg, upsertBg, useBg, useNearby, useSearch } from '../../store/misc';
 import { attempt, toast } from '../../store/toasts';
 import { copyText, runCustomCommand } from '../../actions/fileOps';
 import { Badge, Button, Checkbox, Dialog, DialogButtons, Field, IconButton, NumberInput, Segmented, Select, TextInput, cx } from '../ui';
@@ -62,7 +62,7 @@ export function FindDialog({ props, close }: DP<'find'>) {
       const prev = useSearch.getState().run;
       if (prev?.running) void call('search.cancel', { id: prev.id }).catch(() => undefined);
       const { id } = await call('search.start', { params });
-      useSearch.setState({ run: { id, params, results: [], running: true, startedAt: Date.now() } });
+      beginSearch(id, params);
       showDock('search');
       close();
     } catch (e) {

@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use crate::error::{Error, Result};
@@ -69,24 +69,45 @@ async fn http_connect(host: &str, port: u16, proxy: &ProxyOptions) -> Result<Tcp
     }
     req.push_str("\r\n");
     s.write_all(req.as_bytes()).await?;
-    // Read the response header byte-wise-buffered, then hand back the raw stream.
-    let mut reader = BufReader::new(&mut s);
-    let mut status = String::new();
-    reader.read_line(&mut status).await?;
-    let ok = status.split_whitespace().nth(1).map(|c| c.starts_with('2')).unwrap_or(false);
-    loop {
-        let mut line = String::new();
-        let n = reader.read_line(&mut line).await?;
-        if n == 0 || line == "\r\n" || line == "\n" {
+    // Read the response header one byte at a time: the target may speak first (SSH and FTP
+    // banners), and its first bytes can arrive in the same packet as the proxy's reply.
+    let mut head = Vec::new();
+    while !(head.ends_with(b"\r\n\r\n") || head.ends_with(b"\n\n")) {
+        if head.len() > 64 * 1024 {
+            return Err(Error::protocol("HTTP proxy sent an overlong CONNECT response"));
+        }
+        if s.read_u8().await.map(|b| head.push(b)).is_err() {
             break;
         }
     }
-    if !reader.buffer().is_empty() {
-        return Err(Error::protocol("HTTP proxy sent unexpected data after CONNECT response"));
-    }
-    drop(reader);
+    let head = String::from_utf8_lossy(&head);
+    let status = head.lines().next().unwrap_or("").to_string();
+    let ok = status.split_whitespace().nth(1).map(|c| c.starts_with('2')).unwrap_or(false);
     if !ok {
         return Err(Error::ConnectionLost(format!("HTTP proxy refused CONNECT: {}", status.trim())));
     }
     Ok(s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn http_connect_keeps_the_banner_that_follows_the_reply() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut s, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = s.read(&mut buf).await.unwrap();
+            // Proxy reply and the server's banner in a single packet.
+            s.write_all(b"HTTP/1.1 200 Connection established\r\n\r\nSSH-2.0-Test\r\n").await.unwrap();
+        });
+        let proxy = ProxyOptions { kind: ProxyKind::Http, host: "127.0.0.1".into(), port, ..Default::default() };
+        let mut s = connect_tcp("example.org", 22, &proxy, Duration::from_secs(5)).await.unwrap();
+        let mut banner = vec![0u8; 14];
+        s.read_exact(&mut banner).await.unwrap();
+        assert_eq!(banner, b"SSH-2.0-Test\r\n");
+    }
 }

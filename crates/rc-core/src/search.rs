@@ -49,7 +49,9 @@ pub async fn search(
         if params.case_sensitive {
             s.as_bytes().to_vec()
         } else {
-            s.to_lowercase().into_bytes()
+            // The file content is folded byte-wise, so the needle must be folded the same
+            // way (Unicode lowercasing would never match a non-ASCII needle like "Äpfel").
+            s.to_ascii_lowercase().into_bytes()
         }
     });
     let opts = WalkOptions {
@@ -182,7 +184,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let base = from_native(dir.path());
         let vfs = LocalVfs::new();
-        for (p, c) in [("a/x.log", "hello World"), ("a/b/y.log", "nothing"), ("z.txt", "WORLD")] {
+        for (p, c) in [("a/x.log", "hello World"), ("a/b/y.log", "nothing Äpfel"), ("z.txt", "WORLD")] {
             let full = vpath::join(&base, p);
             vfs.mkdir_all(&vpath::parent(&full)).await.unwrap();
             write_all(&vfs, &full, c.as_bytes()).await.unwrap();
@@ -197,5 +199,9 @@ mod tests {
         let mut names: Vec<_> = found.iter().map(|e| e.name.clone()).collect();
         names.sort();
         assert_eq!(names, vec!["x.log", "z.txt"]);
+        // Non-ASCII text in the needle (umlauts) must still match.
+        let p = SearchParams { root: base.clone(), content_text: Some("ÄPFEL".into()), ..Default::default() };
+        let s = search(&vfs, &p, CancellationToken::new(), |_| {}).await.unwrap();
+        assert_eq!(s.found, 1);
     }
 }

@@ -81,7 +81,7 @@ pub struct Peer {
     pub user: Option<String>,
     pub addresses: Vec<String>,
     pub web: Option<PeerWeb>,
-    /// Unix milliseconds.
+    /// Unix seconds (like every other timestamp the UI gets).
     pub last_seen: i64,
     pub manual: bool,
     #[serde(rename = "self")]
@@ -152,7 +152,7 @@ struct Entry {
     info: InstanceInfo,
     addresses: Vec<IpAddr>,
     last_seen: Instant,
-    last_seen_ms: i64,
+    last_seen_secs: i64,
     manual: bool,
     /// Manual peers carry their own reachability flag (probed over HTTP).
     manual_online: bool,
@@ -361,7 +361,7 @@ impl Discovery {
                 info: info.clone(),
                 addresses: vec![],
                 last_seen: Instant::now(),
-                last_seen_ms: now_ms(),
+                last_seen_secs: now_secs(),
                 manual: true,
                 manual_online: online,
             });
@@ -370,7 +370,7 @@ impl Discovery {
             e.manual_online = online;
             if online {
                 e.last_seen = Instant::now();
-                e.last_seen_ms = now_ms();
+                e.last_seen_secs = now_secs();
             }
             if let Some(ip) = ip {
                 if !e.addresses.contains(&ip) {
@@ -411,8 +411,8 @@ impl Drop for Discovery {
     }
 }
 
-fn now_ms() -> i64 {
-    chrono::Utc::now().timestamp_millis()
+fn now_secs() -> i64 {
+    chrono::Utc::now().timestamp()
 }
 
 fn send_everywhere(sender: &Socket, data: &[u8], port: u16) {
@@ -489,14 +489,14 @@ impl Inner {
                 info: info.clone(),
                 addresses: vec![],
                 last_seen: Instant::now(),
-                last_seen_ms: now_ms(),
+                last_seen_secs: now_secs(),
                 manual: false,
                 manual_online: false,
             });
             let mut changed = offline_before || e.info != info;
             e.info = info;
             e.last_seen = Instant::now();
-            e.last_seen_ms = now_ms();
+            e.last_seen_secs = now_secs();
             if e.manual {
                 e.manual_online = true;
             }
@@ -555,7 +555,7 @@ impl Inner {
         if own_addrs.is_empty() {
             own_addrs.push("127.0.0.1".into());
         }
-        let mut out = vec![Peer::from_info(&me, own_addrs, now_ms(), false, true, true)];
+        let mut out = vec![Peer::from_info(&me, own_addrs, now_secs(), false, true, true)];
         let peers = self.peers.lock();
         let mut others: Vec<Peer> = peers
             .values()
@@ -564,7 +564,7 @@ impl Inner {
                 Peer::from_info(
                     &e.info,
                     e.addresses.iter().map(|a| a.to_string()).collect(),
-                    e.last_seen_ms,
+                    e.last_seen_secs,
                     e.manual,
                     false,
                     online,

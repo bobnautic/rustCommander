@@ -183,6 +183,9 @@ struct JobInner {
     paused: watch::Sender<bool>,
     bytes_done: AtomicU64,
     dirty: AtomicBool,
+    /// Set once the job was removed from the list: no more events for it, or the UI
+    /// would add it back.
+    removed: AtomicBool,
     pub limiter: RateLimiter,
     speed_state: Mutex<(Instant, u64, f64)>,
     conflict_lock: tokio::sync::Mutex<()>,
@@ -380,6 +383,9 @@ struct QueueInner {
 impl QueueInner {
     fn emit(&self, job: &JobInner) {
         job.dirty.store(false, Ordering::Relaxed);
+        if job.removed.load(Ordering::SeqCst) {
+            return;
+        }
         (self.listener)(JobEvent::Updated(Box::new(job.snapshot())));
     }
 }
@@ -427,7 +433,17 @@ impl JobQueue {
         if n > old {
             self.inner.semaphore.add_permits(n - old);
         } else if n < old {
-            self.inner.semaphore.forget_permits(old - n);
+            // Permits held by running jobs cannot be forgotten now: take them back as
+            // those jobs finish, otherwise the limit would silently stay higher.
+            let missing = (old - n) - self.inner.semaphore.forget_permits(old - n);
+            if missing > 0 {
+                let sem = self.inner.semaphore.clone();
+                tokio::spawn(async move {
+                    if let Ok(p) = sem.acquire_many_owned(missing as u32).await {
+                        p.forget();
+                    }
+                });
+            }
         }
     }
 
@@ -468,6 +484,7 @@ impl JobQueue {
             paused,
             bytes_done: AtomicU64::new(0),
             dirty: AtomicBool::new(false),
+            removed: AtomicBool::new(false),
             limiter: RateLimiter::new(speed_limit),
             speed_state: Mutex::new((Instant::now(), 0, 0.0)),
             conflict_lock: tokio::sync::Mutex::new(()),
@@ -578,6 +595,7 @@ impl JobQueue {
     /// Remove a job from the list (cancels it if still running).
     pub fn remove(&self, id: &str) -> Result<()> {
         let j = self.find(id)?;
+        j.removed.store(true, Ordering::SeqCst);
         j.cancel.lock().cancel();
         self.inner.jobs.lock().retain(|x| x.id != id);
         (self.inner.listener)(JobEvent::Removed(id.to_string()));
@@ -590,7 +608,10 @@ impl JobQueue {
             let ids = jobs
                 .iter()
                 .filter(|j| j.progress.lock().snapshot.state.is_finished())
-                .map(|j| j.id.clone())
+                .map(|j| {
+                    j.removed.store(true, Ordering::SeqCst);
+                    j.id.clone()
+                })
                 .collect::<Vec<_>>();
             jobs.retain(|j| !ids.contains(&j.id));
             ids
@@ -634,5 +655,51 @@ impl JobQueue {
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct UntilCancelled;
+
+    #[async_trait]
+    impl JobTask for UntilCancelled {
+        async fn run(&self, ctx: &JobCtx) -> Result<()> {
+            ctx.cancel_token().cancelled().await;
+            Err(Error::Cancelled)
+        }
+    }
+
+    #[tokio::test]
+    async fn removed_job_sends_no_more_updates() {
+        let events: Arc<Mutex<Vec<JobEvent>>> = Arc::default();
+        let ev = events.clone();
+        let q = JobQueue::new(2, Arc::new(move |e| ev.lock().push(e)));
+        let job = q.submit(JobKind::Transfer, JobSpec::default(), Arc::new(UntilCancelled), 0);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        q.remove(&job.id).unwrap();
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        let events = events.lock();
+        let removed_at = events.iter().position(|e| matches!(e, JobEvent::Removed(_))).unwrap();
+        assert!(events[removed_at + 1..].is_empty(), "{:?}", &events[removed_at + 1..]);
+    }
+
+    #[tokio::test]
+    async fn lowering_the_limit_while_jobs_run() {
+        let q = JobQueue::new(2, Arc::new(|_| {}));
+        let a = q.submit(JobKind::Transfer, JobSpec::default(), Arc::new(UntilCancelled), 0);
+        let b = q.submit(JobKind::Transfer, JobSpec::default(), Arc::new(UntilCancelled), 0);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        q.set_max_concurrent(1);
+        q.cancel(&a.id).unwrap();
+        q.cancel(&b.id).unwrap();
+        q.wait(&a.id).await.unwrap();
+        q.wait(&b.id).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(q.inner.semaphore.available_permits(), 1);
+        q.set_max_concurrent(3);
+        assert_eq!(q.inner.semaphore.available_permits(), 3);
     }
 }

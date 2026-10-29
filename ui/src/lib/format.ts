@@ -30,7 +30,16 @@ export function formatBytes(n: number | null | undefined, digits = 1): string {
     v /= 1024;
     u++;
   }
-  const d = v >= 100 ? 0 : digits;
+  // Decide the decimals on the rounded value: 99.97 KB shows as "100 KB", and
+  // 1023.99 KB moves up to "1.0 MB" instead of "1,024 KB".
+  const rounded = (x: number, d: number) => Math.round(x * 10 ** d) / 10 ** d;
+  let d = v >= 100 ? 0 : digits;
+  if (rounded(v, d) >= 1024 && u < UNITS.length - 1) {
+    v /= 1024;
+    u++;
+    d = digits;
+  }
+  if (rounded(v, d) >= 100) d = 0;
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: d, minimumFractionDigits: d }).format(v)} ${UNITS[u]}`;
 }
 

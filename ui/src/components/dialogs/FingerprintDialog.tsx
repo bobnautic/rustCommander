@@ -210,7 +210,7 @@ export default function FingerprintDialog({ props, close }: { props: Fingerprint
       props.onCopied?.();
       close();
     } catch (e) {
-      toast.error(e, t('fp.copyChanged'));
+      toast.error(e, t('fp.copyChanged', { n: toCopy }));
       setBusy(false);
     }
   };

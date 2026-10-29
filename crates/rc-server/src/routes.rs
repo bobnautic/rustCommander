@@ -17,6 +17,7 @@ use parking_lot::Mutex;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
 use serde_json::json;
+use tokio_util::sync::CancellationToken;
 
 use rc_api::{dispatch, AppState, Origin, RpcError};
 use rc_core::path as vpath;
@@ -34,12 +35,18 @@ struct Ctx {
     clients: Arc<AtomicUsize>,
     tls: bool,
     failures: Arc<Mutex<HashMap<IpAddr, (u32, Instant)>>>,
+    /// Cancelled when the server stops: upgraded WebSockets are not part of the HTTP
+    /// server's graceful shutdown and would keep receiving events otherwise.
+    stop: CancellationToken,
 }
 
-pub fn router(state: Arc<AppState>, clients: Arc<AtomicUsize>, tls: bool) -> Router {
-    let ctx = Ctx { state, clients, tls, failures: Arc::new(Mutex::new(HashMap::new())) };
+/// The editor saves files of up to 8 MiB through `fs.writeText` (axum's default is 2 MiB).
+const RPC_BODY_LIMIT: usize = 64 * 1024 * 1024;
+
+pub fn router(state: Arc<AppState>, clients: Arc<AtomicUsize>, tls: bool, stop: CancellationToken) -> Router {
+    let ctx = Ctx { state, clients, tls, failures: Arc::new(Mutex::new(HashMap::new())), stop };
     let protected = Router::new()
-        .route("/api/rpc", post(rpc))
+        .route("/api/rpc", post(rpc).layer(DefaultBodyLimit::max(RPC_BODY_LIMIT)))
         .route("/api/events", get(events))
         .route("/api/download", get(download))
         .route("/api/upload", put(upload).layer(DefaultBodyLimit::disable()))
@@ -55,20 +62,38 @@ pub fn router(state: Arc<AppState>, clients: Arc<AtomicUsize>, tls: bool) -> Rou
 }
 
 async fn security_headers(req: Request, next: Next) -> Response {
+    let download = req.uri().path() == "/api/download";
     let mut res = next.run(req).await;
+    // A downloaded HTML/SVG/XML file opened in a browser tab would otherwise run its scripts
+    // on our origin, with the user's session.
+    let active_download = download
+        && res.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).is_some_and(is_active_content);
     let h = res.headers_mut();
     h.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
     h.insert("x-frame-options", HeaderValue::from_static("DENY"));
     h.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
     h.insert(
         "content-security-policy",
-        HeaderValue::from_static(
-            "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; \
-             img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; \
-             worker-src 'self' blob:; frame-ancestors 'none'; object-src 'none'",
-        ),
+        if active_download {
+            HeaderValue::from_static(
+                "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; \
+                 frame-ancestors 'none'",
+            )
+        } else {
+            HeaderValue::from_static(
+                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; \
+                 img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' ws: wss:; \
+                 worker-src 'self' blob:; frame-ancestors 'none'; object-src 'none'",
+            )
+        },
     );
     res
+}
+
+/// Content types a browser renders as a document that can run scripts.
+fn is_active_content(content_type: &str) -> bool {
+    let mime = content_type.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    mime == "text/html" || mime == "image/svg+xml" || mime.ends_with("/xml") || mime.ends_with("+xml")
 }
 
 fn token_from(headers: &HeaderMap) -> (Option<String>, bool) {
@@ -142,19 +167,21 @@ async fn login(
     {
         let mut f = ctx.failures.lock();
         f.retain(|_, (_, t)| t.elapsed() < Duration::from_secs(600));
-        if let Some((n, t)) = f.get(&ip) {
-            if *n >= 5 && t.elapsed() < Duration::from_secs(60) {
-                return error(StatusCode::TOO_MANY_REQUESTS, "forbidden", "too many failed logins, wait a minute");
-            }
-        }
-    }
-    if !ctx.state.server_auth.verify_password(&body.password) {
-        // Slow down guessing.
-        tokio::time::sleep(Duration::from_millis(700)).await;
-        let mut f = ctx.failures.lock();
         let e = f.entry(ip).or_insert((0, Instant::now()));
+        if e.0 >= 5 && e.1.elapsed() < Duration::from_secs(60) {
+            return error(StatusCode::TOO_MANY_REQUESTS, "forbidden", "too many failed logins, wait a minute");
+        }
+        // Count the attempt before checking it, so parallel requests cannot all get through.
         e.0 += 1;
         e.1 = Instant::now();
+    }
+    // Argon2 takes a while and a lot of memory: keep it off the async workers.
+    let st = ctx.state.clone();
+    let password = body.password;
+    let valid = tokio::task::spawn_blocking(move || st.server_auth.verify_password(&password)).await.unwrap_or(false);
+    if !valid {
+        // Slow down guessing.
+        tokio::time::sleep(Duration::from_millis(700)).await;
         tracing::warn!("failed web login from {ip}");
         return error(StatusCode::UNAUTHORIZED, "unauthorized", "wrong password");
     }
@@ -236,6 +263,7 @@ async fn event_loop(ctx: Ctx, socket: WebSocket) {
                 if tx.send(Message::Ping(Vec::new().into())).await.is_err() { break; }
             }
             _ = st.shutdown.cancelled() => break,
+            _ = ctx.stop.cancelled() => break,
         }
     }
     ctx.clients.fetch_sub(1, Ordering::Relaxed);

@@ -219,9 +219,20 @@ impl Vfs for ScpVfs {
     async fn list(&self, path: &str) -> Result<Vec<FileEntry>> {
         let dir = vpath::normalize(path);
         let target = if dir.ends_with('/') { dir.clone() } else { format!("{dir}/") };
-        let out = self.check(&format!("{} {}", self.ls("-la"), quote_path(&target)), &dir).await?;
+        let out = self.run(&format!("{} {}", self.ls("-la"), quote_path(&target))).await?;
         let now = now();
+        // GNU ls exits with 1 when single entries cannot be examined (another user's FUSE
+        // mount, a file deleted meanwhile) but still lists the rest.
+        let listed = match out.exit_code {
+            Some(0) => true,
+            Some(1) => out.stdout.lines().any(|l| parse_ls_line(l, now).is_some()),
+            _ => false,
+        };
+        if !listed {
+            return Err(command_error(&out.stderr, out.exit_code, &dir));
+        }
         let mut entries: Vec<FileEntry> = out
+            .stdout
             .lines()
             .filter_map(|l| parse_ls_line(l, now))
             .filter(|e| e.name != "." && e.name != ".." && !e.name.contains('/'))
@@ -276,9 +287,9 @@ impl Vfs for ScpVfs {
     async fn rename(&self, from: &str, to: &str) -> Result<()> {
         let (f, t) = (quote_path(from), quote_path(to));
         // `mv` would move into an existing directory; rename semantics want a failure.
-        let cmd = format!(
-            "if [ -d {t} ] && [ ! -L {t} ]; then echo \"mv: {to}: File exists\" >&2; exit 1; fi; mv -f {f} {t}"
-        );
+        // The message is quoted too: the target name must never reach the shell unquoted.
+        let msg = quote(&format!("mv: {to}: File exists"));
+        let cmd = format!("if [ -d {t} ] && [ ! -L {t} ]; then echo {msg} >&2; exit 1; fi; mv -f {f} {t}");
         match self.check(&cmd, from).await {
             Err(Error::AlreadyExists(_)) => Err(Error::AlreadyExists(to.to_string())),
             r => r.map(|_| ()),

@@ -117,6 +117,11 @@ async fn tree_operations(vfs: &dyn Vfs, base: &str) {
     let mut names: Vec<String> = vfs.list(&dst).await.expect("list dst").into_iter().map(|e| e.name).collect();
     names.sort();
     assert_eq!(names, ["a.txt", "deep", "empty"]);
+    // Moving a directory into itself is refused (object stores would copy, then delete all).
+    assert!(vfs.rename(&dst, &format!("{dst}/deep/inner")).await.is_err(), "rename into itself");
+    assert_eq!(read(vfs, &format!("{dst}/deep/b.txt"), 0).await, b"bb", "tree intact");
+    vfs.rename(&format!("{dst}/a.txt"), &format!("{dst}/a.txt")).await.expect("rename onto itself");
+    assert_eq!(read(vfs, &format!("{dst}/a.txt"), 0).await, b"a", "file intact");
 
     assert!(matches!(vfs.remove_dir(&dst).await, Err(Error::DirectoryNotEmpty(_))), "rmdir non-empty");
     assert!(matches!(vfs.remove_file(&dst).await, Err(Error::IsADirectory(_))), "remove_file on dir");
