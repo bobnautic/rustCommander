@@ -7,16 +7,23 @@
 pub mod connect;
 pub mod error;
 pub mod known_hosts;
+pub mod jobs;
 pub mod local;
 mod local_pty;
+pub mod mask;
 pub mod net;
+pub mod ops;
 pub mod path;
 pub mod prompt;
 pub mod protocols;
 pub mod site;
+pub mod search;
 pub mod store;
+pub mod sync;
+pub mod transfer;
 pub mod types;
 pub mod vfs;
+pub mod watch;
 
 pub use connect::{connect, ConnectContext};
 pub use error::{Error, ErrorCode, Result};
