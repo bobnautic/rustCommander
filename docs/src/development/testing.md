@@ -57,5 +57,5 @@ the demo backend — run it after UI changes that affect the screenshots. See
 2. Rust on Linux, Windows and macOS: `cargo fmt --check`, `cargo clippy -D warnings`,
    `cargo test --workspace`, release build of `rcmd`
 
-`.github/workflows/release.yml` builds the desktop installers and `rcmd` binaries for
-tags `v*`.
+`.github/workflows/release.yml` runs the same checks and builds the desktop installers and
+`rcmd` binaries for version tags `v*`, see [Releasing](releasing.md).

@@ -8,6 +8,7 @@
 SFTP · SCP · FTP/FTPS · WebDAV · S3 · Azure · Google Cloud Storage — on your desktop and in your browser.
 
 [![CI](https://github.com/bobnautic/rustcommander/actions/workflows/ci.yml/badge.svg)](https://github.com/bobnautic/rustcommander/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/bobnautic/rustcommander?include_prereleases&sort=semver)](https://github.com/bobnautic/rustcommander/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Rust 1.91+](https://img.shields.io/badge/rust-1.91%2B-orange.svg)
 ![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB.svg)
@@ -123,9 +124,15 @@ optional Argon2id master password), throttled and CSRF-protected web logins.
 
 ### Desktop
 
-[Build it](#-building) with `npm run build` — installers for Windows, macOS and Linux will
-also appear on the [releases page](https://github.com/bobnautic/rustcommander/releases)
-once a version is tagged. Start **Rust Commander**, press **Ctrl+N** to open the Site
+Download the latest version from the
+[releases page](https://github.com/bobnautic/rustcommander/releases/latest):
+
+| macOS (Apple silicon + Intel) | Windows 10/11 | Linux |
+|:---:|:---:|:---:|
+| `rustCommander-<version>-macos-universal.dmg` | `rustCommander-<version>-windows-x64-setup.exe`<br>or `…-portable.exe` | `.AppImage` · `.deb` · `.rpm` |
+
+See [Installation](docs/src/getting-started/installation.md) for first-start notes, or
+[build it](#-building) yourself. Start **Rust Commander**, press **Ctrl+N** to open the Site
 Manager and connect. The keys work as in every classic commander: **F5** copy,
 **F6** move, **F7** new folder, **F8** delete, **F4** edit, **F1** all shortcuts.
 
@@ -166,7 +173,7 @@ The full documentation lives in [`docs/`](docs/) and can be built as a website w
 | | [Synchronization](docs/src/guide/synchronization.md) | [Configuration files](docs/src/reference/configuration.md) |
 | **Deployment** | [Editor](docs/src/guide/editor.md) · [Remote Explorer](docs/src/guide/remote-explorer.md) | **Development** |
 | [Headless server](docs/src/deployment/headless-server.md) | [Terminal and SSH tunnels](docs/src/guide/terminal-and-tunnels.md) | [Architecture](docs/src/development/architecture.md) |
-| [Security](docs/src/deployment/security.md) | [LAN discovery](docs/src/guide/lan-discovery.md) · [Web mode](docs/src/guide/web-mode.md) | [Testing](docs/src/development/testing.md) |
+| [Security](docs/src/deployment/security.md) | [LAN discovery](docs/src/guide/lan-discovery.md) · [Web mode](docs/src/guide/web-mode.md) | [Testing](docs/src/development/testing.md) · [Releasing](docs/src/development/releasing.md) |
 
 ## 🛠️ Building
 

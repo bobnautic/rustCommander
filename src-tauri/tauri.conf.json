@@ -39,6 +39,15 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "macOS": {
+      "signingIdentity": "-"
+    },
+    "windows": {
+      "nsis": {
+        "languages": ["English", "German"],
+        "displayLanguageSelector": false
+      }
+    },
     "linux": {
       "deb": { "depends": [] }
     }

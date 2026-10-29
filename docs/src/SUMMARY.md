@@ -40,6 +40,7 @@
 
 - [Architecture](development/architecture.md)
 - [Testing](development/testing.md)
+- [Releasing](development/releasing.md)
 
 ---
 

@@ -1,77 +1,279 @@
 name: Release
 
+# A release is cut by pushing a version tag:
+#   git tag v0.2.0 && git push origin v0.2.0
+# or with "Run workflow" on the Actions tab (enter the version; the tag is created on the
+# selected branch). Every platform is built and tested first; the GitHub release with all
+# downloads is created only when everything succeeded.
+
 on:
   push:
-    tags: ['v*']
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version, e.g. 0.2.0 or 0.3.0-beta.1 (tag v<version> is created on the selected branch)'
+        required: true
+      draft:
+        description: 'Create the release as a draft (publish it by hand later)'
+        type: boolean
+        default: false
+      dry-run:
+        description: 'Only build the downloads (workflow artifacts), do not create a release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
+  prepare:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - name: Determine version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then v="${INPUT_VERSION#v}"; else v="${GITHUB_REF_NAME#v}"; fi
+          if ! [[ "$v" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "::error::'$v' is not a version like 1.2.3 or 1.2.3-beta.1"
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && git ls-remote --exit-code --tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "refs/tags/v$v" >/dev/null; then
+            echo "::error::Tag v$v already exists. Pick a new version or re-run the workflow of that tag."
+            exit 1
+          fi
+          {
+            echo "version=$v"
+            echo "tag=v$v"
+            echo "prerelease=$([[ "$v" == *-* ]] && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing **v$v**" >> "$GITHUB_STEP_SUMMARY"
+
+  checks:
+    name: Checks
+    uses: ./.github/workflows/ci.yml
+
   desktop:
-    name: Desktop bundles (${{ matrix.platform }})
-    permissions:
-      contents: write
+    name: Desktop (${{ matrix.name }})
+    needs: prepare
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: ubuntu-22.04
-            args: ''
-          - platform: windows-latest
-            args: ''
-          - platform: macos-latest
-            args: '--target universal-apple-darwin'
-    runs-on: ${{ matrix.platform }}
+          - name: macOS
+            os: macos-latest
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin --bundles app,dmg
+          - name: Windows
+            os: windows-latest
+            args: --bundles nsis
+          # oldest supported Ubuntu, so the packages run on older glibc versions too
+          - name: Linux
+            os: ubuntu-22.04
+            args: --bundles deb,rpm,appimage
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ui/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-      - uses: Swatinem/rust-cache@v2
+          targets: ${{ matrix.rust-targets }}
       - name: Linux packages for Tauri
-        if: matrix.platform == 'ubuntu-22.04'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+      - name: Set version ${{ env.VERSION }}
+        run: node scripts/set-version.mjs "$VERSION"
+        shell: bash
       - run: npm ci && npm --prefix ui ci
-      - uses: tauri-apps/tauri-action@v0
+        shell: bash
+      - name: Build
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional macOS signing and notarization (repository secrets). Without them the app is
+          # ad-hoc signed (bundle.macOS.signingIdentity "-").
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # an empty variable would make the bundler try (and fail) to import a certificate
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!v}" ] || unset "$v"
+          done
+          npx tauri build ${{ matrix.args }} -- --locked
+      - name: Collect downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=release-assets
+          base="rustCommander-$VERSION"
+          mkdir -p "$out"
+          case "$RUNNER_OS" in
+            macOS)
+              cp target/universal-apple-darwin/release/bundle/dmg/*.dmg "$out/$base-macos-universal.dmg" ;;
+            Windows)
+              cp target/release/bundle/nsis/*-setup.exe "$out/$base-windows-x64-setup.exe"
+              cp target/release/rust-commander.exe "$out/$base-windows-x64-portable.exe" ;;
+            Linux)
+              cp target/release/bundle/appimage/*.AppImage "$out/$base-linux-x86_64.AppImage"
+              cp target/release/bundle/deb/*.deb "$out/$base-linux-amd64.deb"
+              cp target/release/bundle/rpm/*.rpm "$out/$base-linux-x86_64.rpm" ;;
+          esac
+          ls -l "$out"
+      - uses: actions/upload-artifact@v4
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Rust Commander ${{ github.ref_name }}'
-          releaseDraft: true
-          args: ${{ matrix.args }}
+          name: release-desktop-${{ matrix.name }}
+          path: release-assets/*
+          if-no-files-found: error
 
-  headless:
-    name: rcmd (${{ matrix.target }})
-    permissions:
-      contents: write
+  rcmd:
+    name: rcmd (${{ matrix.name }})
+    needs: prepare
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
-          - { os: windows-latest, target: x86_64-pc-windows-msvc }
-          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { name: linux-x86_64, os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { name: linux-aarch64, os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
+          - { name: macos-arm64, os: macos-latest, target: aarch64-apple-darwin }
+          - { name: macos-x86_64, os: macos-latest, target: x86_64-apple-darwin }
+          - { name: windows-x64, os: windows-latest, target: x86_64-pc-windows-msvc }
     runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - run: npm --prefix ui ci && npm --prefix ui run build
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release -p rc-cli --target ${{ matrix.target }}
+      - name: Set version ${{ env.VERSION }}
+        run: node scripts/set-version.mjs "$VERSION"
+        shell: bash
+      - run: npm --prefix ui ci && npm --prefix ui run build
+        shell: bash
+      - run: cargo build --release --locked -p rc-cli --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="rcmd-$VERSION-${{ matrix.name }}"
+          mkdir -p "$dir" release-assets
+          cp LICENSE "$dir/"
+          if [ "$RUNNER_OS" = Windows ]; then
+            cp "target/${{ matrix.target }}/release/rcmd.exe" "$dir/"
+            7z a -tzip "release-assets/$dir.zip" "$dir" >/dev/null
+          else
+            cp "target/${{ matrix.target }}/release/rcmd" "$dir/"
+            tar -czf "release-assets/$dir.tar.gz" "$dir"
+          fi
+          ls -l release-assets
       - uses: actions/upload-artifact@v4
         with:
-          name: rcmd-${{ matrix.target }}
-          path: |
-            target/${{ matrix.target }}/release/rcmd
-            target/${{ matrix.target }}/release/rcmd.exe
+          name: release-rcmd-${{ matrix.name }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [prepare, checks, desktop, rcmd]
+    if: ${{ !inputs.dry-run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+      DRAFT: ${{ inputs.draft || false }}
+      MAC_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Release notes
+        run: |
+          set -euo pipefail
+          b="rustCommander-$VERSION"
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$TAG"
+          {
+            echo "## Downloads"
+            echo
+            echo "| System | File |"
+            echo "|---|---|"
+            echo "| macOS 10.13+ (Apple silicon and Intel) | [\`$b-macos-universal.dmg\`]($url/$b-macos-universal.dmg) |"
+            echo "| Windows 10/11, installer | [\`$b-windows-x64-setup.exe\`]($url/$b-windows-x64-setup.exe) |"
+            echo "| Windows 10/11, portable (no installation) | [\`$b-windows-x64-portable.exe\`]($url/$b-windows-x64-portable.exe) |"
+            echo "| Linux | [\`.AppImage\`]($url/$b-linux-x86_64.AppImage) · [\`.deb\`]($url/$b-linux-amd64.deb) · [\`.rpm\`]($url/$b-linux-x86_64.rpm) |"
+            echo "| Headless server and CLI (\`rcmd\`) | \`rcmd-$VERSION-<platform>.tar.gz\` / \`.zip\` below |"
+            echo
+            echo "Checksums: \`SHA256SUMS.txt\` (\`shasum -a 256 -c SHA256SUMS.txt --ignore-missing\`)."
+            echo
+            if [ "$MAC_SIGNED" != true ]; then
+              echo "> **macOS:** the app is not notarized by Apple. On first start macOS refuses to open it —"
+              echo "> open **System Settings → Privacy & Security** and click **Open Anyway**, or run"
+              echo "> \`xattr -dr com.apple.quarantine \"/Applications/Rust Commander.app\"\`."
+              echo
+            fi
+            echo "> **Windows:** the installer is not code-signed. If SmartScreen warns, click **More info → Run anyway**."
+            echo
+            # changes since the previous release (pull requests and contributors)
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" --jq .body
+          } > notes.md
+          cat notes.md
+      - name: Create GitHub release
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists, replacing its files"
+            gh release upload "$TAG" dist/* --clobber
+            exit 0
+          fi
+          args=(--title "Rust Commander $TAG" --notes-file notes.md)
+          if [ "$GITHUB_EVENT_NAME" = push ]; then args+=(--verify-tag); else args+=(--target "$GITHUB_SHA"); fi
+          if [ "$PRERELEASE" = true ]; then args+=(--prerelease); fi
+          if [ "$DRAFT" = true ]; then args+=(--draft); fi
+          gh release create "$TAG" dist/* "${args[@]}"
+          echo "Published [$TAG]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG)" >> "$GITHUB_STEP_SUMMARY"
