@@ -4,6 +4,7 @@
 //!   (local, SFTP, SCP, FTP/FTPS, WebDAV, S3, Azure, GCS, Rust Commander peers).
 //! * [`connect()`] — open a [`Vfs`] for a [`SiteConfig`].
 
+pub mod archive;
 pub mod connect;
 pub mod error;
 pub mod known_hosts;
@@ -21,6 +22,7 @@ pub mod search;
 pub mod store;
 pub mod sync;
 pub mod transfer;
+pub mod tunnel;
 pub mod types;
 pub mod vfs;
 pub mod watch;

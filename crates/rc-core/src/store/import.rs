@@ -296,7 +296,7 @@ pub fn from_filezilla_xml(content: &str) -> Result<Vec<SiteConfig>> {
 /// FileZilla serializes paths as `1 0 3 var 3 www` (type, prefix, then length-prefixed segments).
 fn parse_filezilla_path(s: &str) -> String {
     let mut rest = s.trim();
-    let mut take_token = |rest: &mut &str| -> Option<String> {
+    let take_token = |rest: &mut &str| -> Option<String> {
         let r = rest.trim_start();
         let end = r.find(' ').unwrap_or(r.len());
         let tok = r[..end].to_string();
