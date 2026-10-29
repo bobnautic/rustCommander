@@ -1,0 +1,20 @@
+[package]
+name = "rc-discovery"
+description = "LAN discovery of Rust Commander instances via UDP broadcast and multicast"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+socket2 = { version = "0.6", features = ["all"] }
+if-addrs = "0.15"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

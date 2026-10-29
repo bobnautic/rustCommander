@@ -1,0 +1,19 @@
+# systemd unit for the headless server.
+#   sudo cp target/release/rcmd /usr/local/bin/
+#   sudo rcmd --config-dir /etc/rust-commander set-password
+#   sudo cp packaging/rust-commander.service /etc/systemd/system/
+#   sudo systemctl enable --now rust-commander
+[Unit]
+Description=Rust Commander (headless web file manager)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/rcmd --config-dir /etc/rust-commander serve --port 8822
+Restart=on-failure
+# Runs as root to manage the whole machine. For a restricted setup create a user,
+# set User=/Group= and give it access to the directories it should manage.
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=multi-user.target
