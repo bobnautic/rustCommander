@@ -169,7 +169,7 @@ fn parse_cond(p: &str) -> Result<Cond, String> {
         }
         if let Some(age) = parse_age(rest) {
             // "<7D" = newer than 7 days = mtime > now-7d, so the operator flips.
-            let ts = chrono::Utc::now().timestamp() - age;
+            let ts = chrono::Utc::now().timestamp().saturating_sub(age);
             let flipped = match op {
                 Op::Lt => Op::Gt,
                 Op::Le => Op::Ge,
@@ -214,8 +214,9 @@ fn parse_size(s: &str) -> Option<u64> {
 /// `7D`, `12H`, `30N` (minutes), `1Y`, `2W` → seconds.
 fn parse_age(s: &str) -> Option<i64> {
     let s = s.trim();
-    let unit = s.chars().last()?.to_ascii_uppercase();
-    let n: i64 = s[..s.len() - 1].trim().parse().ok()?;
+    let last = s.chars().last()?;
+    let unit = last.to_ascii_uppercase();
+    let n: i64 = s[..s.len() - last.len_utf8()].trim().parse().ok()?;
     let secs = match unit {
         'S' => 1,
         'N' => 60,
@@ -225,7 +226,7 @@ fn parse_age(s: &str) -> Option<i64> {
         'Y' => 365 * 86400,
         _ => return None,
     };
-    Some(n * secs)
+    n.checked_mul(secs)
 }
 
 #[cfg(test)]
@@ -262,6 +263,8 @@ mod tests {
         assert!(m.matches(&file("new", "new", 1)));
         let old = MaskTarget { name: "o", rel_path: "o", is_dir: false, size: 0, modified: Some(0) };
         assert!(!m.matches(&old));
+
+        assert!(FileMask::parse(">7ä").is_err());
 
         let m = FileMask::parse("| *.tmp; .git/").unwrap();
         assert!(m.matches(&file("a.c", "a.c", 1)));

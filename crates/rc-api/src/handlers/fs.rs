@@ -88,9 +88,17 @@ pub async fn rename(state: &AppState, p: RenameParams) -> Result<()> {
     if vpath::normalize(&to) == vpath::normalize(&p.from) {
         return Ok(());
     }
-    // Case-only renames must not be refused on case-insensitive file systems.
+    // Case-only renames must not be refused on case-insensitive file systems, where `stat`
+    // finds the source itself. On case-sensitive ones the other spelling may be a different
+    // file, which the rename would silently replace.
     let case_only = to.to_lowercase() == p.from.to_lowercase();
-    if !case_only && vfs.try_stat(&to).await?.is_some() {
+    let exists = if case_only {
+        let name = vpath::file_name(&to);
+        vfs.list(&vpath::parent(&to)).await?.iter().any(|e| e.name == name)
+    } else {
+        vfs.try_stat(&to).await?.is_some()
+    };
+    if exists {
         return Err(Error::AlreadyExists(to));
     }
     vfs.rename(&p.from, &to).await?;
@@ -217,17 +225,49 @@ pub async fn read_text(state: &AppState, p: ReadParams) -> Result<TextFile> {
     if st.is_dir() {
         return Err(Error::IsADirectory(p.path));
     }
+    // Larger files are cut at `max_bytes`; `size` tells the UI (which opens them read-only).
     let limit = p.max_bytes.unwrap_or(16 * 1024 * 1024);
-    if st.size > limit {
-        return Err(Error::InvalidInput(format!("file is too large to edit ({} bytes)", st.size)));
+    let mut data = read_head(vfs.as_ref(), &p.path, limit, true).await?;
+    let binary = is_binary(&data);
+    if (data.len() as u64) < st.size {
+        // Do not let a UTF-8 character cut in half turn the whole text into Latin-1.
+        if let Err(e) = std::str::from_utf8(&data) {
+            if e.error_len().is_none() {
+                data.truncate(e.valid_up_to());
+            }
+        }
     }
-    let data = rc_core::vfs::read_to_end(vfs.as_ref(), &p.path, limit).await?;
-    let binary = data.iter().take(8192).any(|b| *b == 0);
     let (content, encoding) = match String::from_utf8(data) {
         Ok(s) => (s, "utf-8"),
         Err(e) => (e.into_bytes().iter().map(|&b| b as char).collect(), "latin1"),
     };
     Ok(TextFile { content, encoding, size: st.size, modified: st.modified, binary })
+}
+
+/// Binary files have a NUL byte in their first 8 KiB.
+fn is_binary(data: &[u8]) -> bool {
+    data.iter().take(8192).any(|b| *b == 0)
+}
+
+/// The first `limit` bytes of a file; with `text_only`, reading stops as soon as the file
+/// turns out to be binary (the content of a binary file is not shown as text).
+async fn read_head(vfs: &dyn rc_core::Vfs, path: &str, limit: u64, text_only: bool) -> Result<Vec<u8>> {
+    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
+    let mut r = vfs.open_read(path, 0).await?;
+    let mut out = Vec::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    while out.len() < limit {
+        let want = (limit - out.len()).min(buf.len());
+        let n = r.read(&mut buf[..want]).await?;
+        if n == 0 {
+            break;
+        }
+        out.extend_from_slice(&buf[..n]);
+        if text_only && is_binary(&out) {
+            break;
+        }
+    }
+    Ok(out)
 }
 
 #[derive(Debug, Deserialize)]
@@ -274,10 +314,15 @@ pub struct Base64File {
 
 pub async fn read_base64(state: &AppState, p: ReadParams) -> Result<Base64File> {
     let vfs = state.vfs(&p.session)?;
+    let st = vfs.stat(&p.path).await?;
+    if st.is_dir() {
+        return Err(Error::IsADirectory(p.path));
+    }
+    // The first `max_bytes` (hex preview of binaries); `size` is the size of the whole file.
     let limit = p.max_bytes.unwrap_or(32 * 1024 * 1024);
-    let data = rc_core::vfs::read_to_end(vfs.as_ref(), &p.path, limit).await?;
+    let data = read_head(vfs.as_ref(), &p.path, limit, false).await?;
     Ok(Base64File {
-        size: data.len() as u64,
+        size: st.size.max(data.len() as u64),
         data: base64::engine::general_purpose::STANDARD.encode(&data),
         mime: ops::mime_for(&p.path).to_string(),
     })

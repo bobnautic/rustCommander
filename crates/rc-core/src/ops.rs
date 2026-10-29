@@ -1,6 +1,7 @@
 //! Generic operations built on top of [`Vfs`]: tree walking, sizes, checksums.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use futures::stream::{FuturesUnordered, StreamExt};
 use md5::Digest;
@@ -53,19 +54,28 @@ where
     F: FnMut(WalkItem) -> Result<bool>,
 {
     let mut visited: HashSet<String> = HashSet::new();
-    visited.insert(vpath::normalize(root));
+    let root = vpath::normalize(root);
+    visited.insert(root.clone());
+    // Resolved paths of a directory and all its ancestors: a followed symlink that points
+    // back into this chain (`ln -s .. up`) would make the walk loop forever.
+    let root_chain = if opts.follow_symlinks {
+        vec![vfs.canonicalize(&root).await.map(|c| vpath::normalize(&c)).unwrap_or_else(|_| root.clone())]
+    } else {
+        vec![root.clone()]
+    };
     let mut pending: FuturesUnordered<_> = FuturesUnordered::new();
-    let mut queue: std::collections::VecDeque<(String, String, usize)> = std::collections::VecDeque::new();
-    queue.push_back((vpath::normalize(root), String::new(), 0));
+    let mut queue: std::collections::VecDeque<(String, String, usize, Arc<Vec<String>>)> =
+        std::collections::VecDeque::new();
+    queue.push_back((root, String::new(), 0, Arc::new(root_chain)));
     loop {
         while pending.len() < opts.concurrency.max(1) {
-            let Some((dir, rel, depth)) = queue.pop_front() else { break };
+            let Some((dir, rel, depth, chain)) = queue.pop_front() else { break };
             pending.push(async move {
                 let r = vfs.list(&dir).await;
-                (dir, rel, depth, r)
+                (dir, rel, depth, chain, r)
             });
         }
-        let Some((dir, rel, depth, res)) = pending.next().await else { break };
+        let Some((dir, rel, depth, chain, res)) = pending.next().await else { break };
         let mut entries = match res {
             Ok(e) => e,
             Err(e) if depth > 0 => {
@@ -86,15 +96,30 @@ where
                 continue;
             }
             let path = e.path.clone();
+            let name = e.name.clone();
+            let is_symlink = e.kind == FileKind::Symlink;
             let item = WalkItem { entry: e, rel: child_rel.clone(), depth: depth + 1, is_dir };
             if !cb(item)? {
                 return Ok(());
             }
-            if is_dir && opts.max_depth.is_none_or(|m| depth + 1 < m) {
-                let key = vpath::normalize(&path);
-                if visited.insert(key) {
-                    queue.push_back((path, child_rel, depth + 1));
+            if is_dir && opts.max_depth.is_none_or(|m| depth + 1 < m) && visited.insert(vpath::normalize(&path)) {
+                let parent = chain.last().map(String::as_str).unwrap_or("/");
+                let resolved = if is_symlink {
+                    vfs.canonicalize(&path)
+                        .await
+                        .map(|c| vpath::normalize(&c))
+                        .unwrap_or_else(|_| vpath::normalize(&path))
+                } else {
+                    vpath::join(parent, &name)
+                };
+                if chain.contains(&resolved) {
+                    tracing::warn!("not following {path}: it points to one of its parent directories");
+                    continue;
                 }
+                let mut child_chain = Vec::with_capacity(chain.len() + 1);
+                child_chain.extend(chain.iter().cloned());
+                child_chain.push(resolved);
+                queue.push_back((path, child_rel, depth + 1, Arc::new(child_chain)));
             }
         }
     }
@@ -267,5 +292,35 @@ mod tests {
         let sum = checksum(&vfs, &vpath::join(&base, "c.txt"), ChecksumAlgo::Md5).await.unwrap();
         assert_eq!(sum, "827ccb0eea8a706c4c34a16891f84e7b");
         assert_eq!(unique_name(&vfs, &base, "c.txt").await.unwrap(), "c (1).txt");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn walk_stops_at_symlink_loops() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = from_native(dir.path());
+        let vfs = LocalVfs::new();
+        for p in ["a/f.txt", "b/g.txt"] {
+            let full = vpath::join(&base, p);
+            vfs.mkdir_all(&vpath::parent(&full)).await.unwrap();
+            write_all(&vfs, &full, b"x").await.unwrap();
+        }
+        // a/up -> .. (loop), a/to_b -> ../b, b/to_a -> ../a (loop through two links)
+        std::os::unix::fs::symlink("..", dir.path().join("a/up")).unwrap();
+        std::os::unix::fs::symlink("../b", dir.path().join("a/to_b")).unwrap();
+        std::os::unix::fs::symlink("../a", dir.path().join("b/to_a")).unwrap();
+        let opts = WalkOptions { follow_symlinks: true, ..Default::default() };
+        let mut files = vec![];
+        walk(&vfs, &base, &opts, |i| {
+            if !i.is_dir {
+                files.push(i.rel);
+            }
+            Ok(true)
+        })
+        .await
+        .unwrap();
+        files.sort();
+        // Symlinks to other directories are still followed, but never back into the chain.
+        assert_eq!(files, vec!["a/f.txt", "a/to_b/g.txt", "b/g.txt", "b/to_a/f.txt"]);
     }
 }

@@ -15,6 +15,8 @@ import { Button, Checkbox, Dialog, DialogButtons, Field, Segmented, Spinner, Tex
 import { combinePerms, PermGrid, type PermState } from './common';
 import { typeLabel } from '../panel/FileTable';
 
+const INITIAL_DIR_PERMS: PermState = { value: 0o755, mixed: 0 };
+
 function common<T>(values: T[]): T | null {
   if (!values.length) return null;
   return values.every((v) => v === values[0]) ? values[0] : null;
@@ -34,8 +36,9 @@ export default function PropertiesDialog({ props, close }: { props: DialogPropsM
   const initialPerms = useMemo(() => combinePerms(entries.map((e) => e.permissions)), [entries]);
   const [perms, setPerms] = useState<PermState>(initialPerms);
   const [recursive, setRecursive] = useState(false);
-  const [filePerms, setFilePerms] = useState<PermState>(() => (files.length ? combinePerms(files.map((e) => e.permissions)) : { value: 0o644, mixed: 0 }));
-  const [dirPerms, setDirPerms] = useState<PermState>({ value: 0o755, mixed: 0 });
+  const [initialFilePerms] = useState<PermState>(() => (files.length ? combinePerms(files.map((e) => e.permissions)) : { value: 0o644, mixed: 0 }));
+  const [filePerms, setFilePerms] = useState<PermState>(initialFilePerms);
+  const [dirPerms, setDirPerms] = useState<PermState>(INITIAL_DIR_PERMS);
   const initOwner = common(entries.map((e) => e.owner ?? '')) ?? '';
   const initGroup = common(entries.map((e) => e.group ?? '')) ?? '';
   const [owner, setOwner] = useState(initOwner);
@@ -95,7 +98,11 @@ export default function PropertiesDialog({ props, close }: { props: DialogPropsM
     const ownerChanged = canOwner && owner.trim() && owner.trim() !== initOwner;
     const groupChanged = canOwner && group.trim() && group.trim() !== initGroup;
     const mod = canTime && modified !== initModified ? fromDatetimeLocal(modified) : null;
-    if (canPerms && recursive && dirs.length) {
+    const treePermsEdited =
+      filePerms.value !== initialFilePerms.value || filePerms.mixed !== initialFilePerms.mixed ||
+      dirPerms.value !== INITIAL_DIR_PERMS.value || dirPerms.mixed !== INITIAL_DIR_PERMS.mixed;
+    // "Recursive" to change only the owner (chown -R) must not reset every mode in the tree.
+    if (canPerms && recursive && dirs.length && (treePermsEdited || !(ownerChanged || groupChanged))) {
       calls.push({ ...base, paths: entries.map((e) => e.path), permissions: filePerms.value, dirPermissions: dirPerms.value, recursive: true });
     } else if (canPerms && permsChanged) {
       if (perms.mixed) {

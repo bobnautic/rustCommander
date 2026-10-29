@@ -20,6 +20,11 @@ import { upsertBg } from '../store/misc';
 export const activeSide = (): Side => useApp.getState().activeSide;
 
 const nameError = (v: string): string | null => (P.isValidName(v.trim()) ? null : tr('ops.invalidName'));
+/** Folder names may be nested (`a/b/c`): every part must be a valid name. */
+const folderPathError = (v: string): string | null => {
+  const parts = v.trim().split('/').filter(Boolean);
+  return parts.length && parts.every((x) => P.isValidName(x)) ? null : tr('ops.invalidName');
+};
 
 function sessionName(id: string) {
   return sessionById(id)?.name ?? id;
@@ -152,7 +157,7 @@ export async function deleteSelection(side: Side) {
 
 export async function makeDir(side: Side) {
   const p = getPanel(side);
-  const name = await inputDialog({ title: tr('ops.newFolder'), label: tr('ops.folderName'), value: tr('ops.newFolderDefault'), validate: nameError, okLabel: tr('common.create'), hint: tr('ops.mkdirHint') });
+  const name = await inputDialog({ title: tr('ops.newFolder'), label: tr('ops.folderName'), value: tr('ops.newFolderDefault'), validate: folderPathError, okLabel: tr('common.create'), hint: tr('ops.mkdirHint') });
   if (!name) return;
   const parts = name.trim().split('/').filter(Boolean);
   const path = P.join(p.path, ...parts);

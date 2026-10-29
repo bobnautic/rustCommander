@@ -143,7 +143,13 @@ impl Vfs for ReconnectingVfs {
         .await
     }
     async fn exec(&self, command: &str, cwd: Option<&str>) -> Result<ExecOutput> {
-        self.with(|v| async move { v.exec(command, cwd).await }).await
+        // Never run a command twice: when the connection breaks while it runs, it may have
+        // done its work already. A connection that is dead beforehand is replaced first.
+        let mut vfs = self.current();
+        if matches!(vfs.ping().await, Err(e) if e.is_connection_error()) {
+            vfs = self.reconnect(&vfs).await?;
+        }
+        vfs.exec(command, cwd).await
     }
     async fn open_terminal(&self, opts: TerminalOptions) -> Result<TerminalChannel> {
         self.with(|v| {

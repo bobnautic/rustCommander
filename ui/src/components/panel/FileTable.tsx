@@ -10,7 +10,7 @@ import * as P from '../../lib/paths';
 import { load, save } from '../../lib/storage';
 import { setActiveSide, useApp } from '../../store/app';
 import {
-  allRows, goHome, goUp, invertSelection, other, PARENT, patchPanel, refresh, selectAll, selectNone, selectRange,
+  allRows, extendRange, goHome, goUp, invertSelection, other, PARENT, patchPanel, refresh, selectAll, selectNone, selectRange,
   setCursor, setSort, toggleSelected, usePanels, type CompareMark, type Side, type SortKey,
 } from '../../store/panels';
 import * as ops from '../../actions/fileOps';
@@ -256,10 +256,11 @@ export function FileTable({ side, active }: { side: Side; active: boolean }) {
     if (!ae || ae === document.body || (ae instanceof HTMLElement && ae.classList.contains('ft-body'))) bodyRef.current?.focus({ preventScroll: true });
   }, [active]);
 
-  // default cursor: first row
+  // default cursor: first row (also when the cursor's entry is hidden or filtered out —
+  // file operations must never act on an entry that is not shown)
   useEffect(() => {
-    if (!p.loading && p.cursor === null && rows.length) setCursor(side, rows[0].name === PARENT && rows.length > 1 ? rows[1].name : rows[0].name);
-  }, [p.loading, p.cursor, rows, side]);
+    if (!p.loading && (p.cursor === null || cursorIdx < 0) && rows.length) setCursor(side, rows[0].name === PARENT && rows.length > 1 ? rows[1].name : rows[0].name);
+  }, [p.loading, p.cursor, cursorIdx, rows, side]);
 
   const first = Math.max(0, Math.floor(scrollTop / rowH) - 6);
   const last = Math.min(rows.length, Math.ceil((scrollTop + viewH) / rowH) + 6);
@@ -268,7 +269,7 @@ export function FileTable({ side, active }: { side: Side; active: boolean }) {
     if (!rows.length) return;
     const i = Math.max(0, Math.min(rows.length - 1, idx));
     const name = rows[i].name;
-    if (extend) selectRange(side, p.anchor ?? p.cursor, name, true);
+    if (extend) extendRange(side, name);
     else patchPanel(side, { cursor: name, anchor: name });
   };
 
@@ -354,7 +355,8 @@ export function FileTable({ side, active }: { side: Side; active: boolean }) {
         moveCursor(cur - page, e.shiftKey);
         break;
       case 'Home':
-        moveCursor(0, e.shiftKey);
+        if (e.ctrlKey || e.metaKey) void goHome(side);
+        else moveCursor(0, e.shiftKey);
         break;
       case 'End':
         moveCursor(rows.length - 1, e.shiftKey);

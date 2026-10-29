@@ -5,7 +5,7 @@ import * as P from '../lib/paths';
 import { tr } from '../i18n';
 import { applySettings, removeSession, showDock, upsertSession, useApp, reloadBookmarks, reloadCommands } from '../store/app';
 import { isFinished, removeJob, setJobs, upsertJob, useJobs } from '../store/jobs';
-import { addPrompt, appendLog, removePrompt, setBg, setLog, upsertBg, useNearby, usePrompts, useSearch } from '../store/misc';
+import { addPrompt, appendLog, onSearchDone, onSearchResult, removePrompt, setBg, setLog, upsertBg, useNearby, usePrompts } from '../store/misc';
 import { initPanels, onSessionClosed, refreshWhere, usePanels } from '../store/panels';
 import { explorerFsChanged, explorerSessionClosed } from '../store/explorer';
 import { adoptTerminals, onTerminalData, onTerminalExit } from '../store/terminals';
@@ -60,12 +60,8 @@ export function subscribeEvents() {
   on('prompt.closed', ({ id }) => removePrompt(id));
   on('terminal.data', ({ id, data }) => onTerminalData(id, data));
   on('terminal.exit', ({ id, code }) => onTerminalExit(id, code));
-  on('search.result', ({ id, entries }) => {
-    useSearch.setState((s) => (s.run && s.run.id === id ? { run: { ...s.run, results: [...s.run.results, ...entries] } } : s));
-  });
-  on('search.done', ({ id, scanned, cancelled, error }) => {
-    useSearch.setState((s) => (s.run && s.run.id === id ? { run: { ...s.run, running: false, scanned, cancelled, error } } : s));
-  });
+  on('search.result', ({ id, entries }) => onSearchResult(id, entries));
+  on('search.done', ({ id, scanned, cancelled, error }) => onSearchDone(id, { scanned, cancelled, error }));
   on('watch.updated', (w) => upsertBg('watches', w));
   on('edit.updated', (e) => upsertBg('edits', e));
   on('tunnel.updated', (t) => upsertBg('tunnels', t));
@@ -76,6 +72,7 @@ export function subscribeEvents() {
     explorerFsChanged(session, path);
   });
   on('log', (e) => appendLog(e));
+  on('resync', () => void loadState(false));
   onReconnected(() => {
     void loadState(false);
     toast.info(tr('conn.reconnected'));

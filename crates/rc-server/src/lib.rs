@@ -24,6 +24,7 @@ pub use routes::router;
 struct Running {
     info: RunningServer,
     handle: axum_server::Handle<SocketAddr>,
+    stop: tokio_util::sync::CancellationToken,
 }
 
 /// Starts/stops the server; installed into [`AppState::server`].
@@ -64,7 +65,8 @@ impl ServerControl for WebServer {
         let std_listener = std::net::TcpListener::bind(addr).map_err(|e| Error::io_at(e, &addr.to_string()))?;
         std_listener.set_nonblocking(true)?;
         let actual = std_listener.local_addr()?;
-        let app = routes::router(state.clone(), self.clients.clone(), tls);
+        let stop = tokio_util::sync::CancellationToken::new();
+        let app = routes::router(state.clone(), self.clients.clone(), tls, stop.clone());
         let handle: axum_server::Handle<SocketAddr> = axum_server::Handle::new();
         let mut fingerprint = None;
         if tls {
@@ -98,13 +100,14 @@ impl ServerControl for WebServer {
             bind,
             actual.port()
         );
-        *self.running.lock() = Some(Running { info: info.clone(), handle });
+        *self.running.lock() = Some(Running { info: info.clone(), handle, stop });
         Ok(info)
     }
 
     async fn stop(&self) -> Result<()> {
         if let Some(r) = self.running.lock().take() {
             r.handle.graceful_shutdown(Some(Duration::from_secs(2)));
+            r.stop.cancel();
             tracing::info!("web interface stopped");
         }
         Ok(())

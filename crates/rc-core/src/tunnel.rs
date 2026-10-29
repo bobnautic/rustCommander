@@ -121,7 +121,12 @@ pub async fn start(session: &str, vfs: Arc<dyn Vfs>, mut spec: TunnelSpec) -> Re
                 _ = stop.cancelled() => break,
                 r = listener.accept() => match r {
                     Ok(x) => x,
-                    Err(e) => { *counters.error.lock() = Some(e.to_string()); continue; }
+                    Err(e) => {
+                        *counters.error.lock() = Some(e.to_string());
+                        // Errors like EMFILE repeat at once: do not spin.
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        continue;
+                    }
                 },
             };
             let vfs = vfs.clone();

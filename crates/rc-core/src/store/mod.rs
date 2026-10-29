@@ -34,13 +34,30 @@ pub fn save_json<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<()> {
     }
     let data = serde_json::to_vec_pretty(value)?;
     let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, data)?;
+    write_private(&tmp, &data)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// Write a file only the user can read. The mode is set when the file is created, so the
+/// content (secrets) is never readable by others, not even for a moment.
+pub(crate) fn write_private(path: &Path, data: &[u8]) -> Result<()> {
+    use std::io::Write;
+    let mut oo = std::fs::OpenOptions::new();
+    oo.write(true).create(true).truncate(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
+        use std::os::unix::fs::OpenOptionsExt;
+        oo.mode(0o600);
     }
-    std::fs::rename(&tmp, path)?;
+    let mut f = oo.open(path)?;
+    #[cfg(unix)]
+    {
+        // An existing file keeps its mode on open (best effort: FAT mounts refuse chmod).
+        use std::os::unix::fs::PermissionsExt;
+        let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
+    }
+    f.write_all(data)?;
     Ok(())
 }
 

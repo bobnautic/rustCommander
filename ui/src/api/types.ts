@@ -646,6 +646,8 @@ export interface RpcEvents {
   /** A directory changed because of an operation; panels showing it should refresh. */
   'fs.changed': { session: string; path: string };
   'log': LogEntry;
+  /** Events were dropped because this client fell behind: reload the state. */
+  'resync': null;
 }
 
 export type RpcEventName = keyof RpcEvents;

@@ -73,12 +73,15 @@ export function comboOf(e: KeyboardEvent): string {
   return parts.join('+');
 }
 
-function blocked(target: EventTarget | null): boolean {
+function blocked(target: EventTarget | null, combo: string): boolean {
   if (isAnyDialogOpen() || usePrompts.getState().queue.length > 0) return true;
   if (useEditors.getState().visible) return true;
   if (useContextMenu.getState().menu) return true;
   const el = target as HTMLElement | null;
   if (!el || !el.closest) return false;
+  // Keys pressed in the remote explorer tree (Delete, F5, F8, ...) must not act on the
+  // active panel; Ctrl/Alt shortcuts (Ctrl+B, ...) keep working there.
+  if (el.closest('.xp-tree') && !/^(Ctrl|Alt)\+/.test(combo)) return true;
   return !!el.closest('input, textarea, select, [contenteditable="true"], .xterm, .cm-editor, .menu');
 }
 
@@ -89,7 +92,7 @@ export function installShortcuts(): () => void {
     // a few shortcuts also work while typing in inputs outside of dialogs
     const always = combo === 'Ctrl+B' || combo === 'Ctrl+J' || combo === 'Ctrl+Shift+E';
     const target = e.target as HTMLElement | null;
-    if (blocked(target)) {
+    if (blocked(target, combo)) {
       const inPlainInput = !!target?.closest?.('input, select') && !isAnyDialogOpen() && !useEditors.getState().visible && !usePrompts.getState().queue.length;
       if (!(always && inPlainInput)) return;
     }

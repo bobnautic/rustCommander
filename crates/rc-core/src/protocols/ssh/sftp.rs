@@ -160,7 +160,11 @@ impl SftpVfs {
         let timeout = conn.timeout();
         let cfg = russh_sftp::client::Config {
             max_packet_len: 1024 * 1024,
-            request_timeout_secs: (timeout.as_secs() * 3).max(60),
+            // The clock starts when a request is queued: behind 8 MiB of pipelined reads on a
+            // slow link, or for a server-side `copy-data` of a large file, a minute is far
+            // too short, and a timeout makes the session reconnect. Dead connections are
+            // detected by the SSH keepalive.
+            request_timeout_secs: (timeout.as_secs() * 3).max(600),
             ..Default::default()
         };
         let sftp = RawSftpSession::new_with_config(channel.into_stream(), cfg);

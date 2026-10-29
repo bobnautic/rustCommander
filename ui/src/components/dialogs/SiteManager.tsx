@@ -258,14 +258,20 @@ export default function SiteManager({ props, close }: { props: DialogPropsMap['s
   const saveSite = async (asNew = false): Promise<SiteConfig | null> => {
     if (!draft) return null;
     let site = clone(draft);
+    let newName: string | null = null;
     if (asNew) {
-      const name = await inputDialog({ title: t('site.saveAs'), label: t('site.name'), value: draft.name ? `${draft.name} (2)` : '', okLabel: t('common.save') });
-      if (!name) return null;
-      site = { ...site, id: '', name: name.trim() };
+      newName = await inputDialog({ title: t('site.saveAs'), label: t('site.name'), value: draft.name ? `${draft.name} (2)` : '', okLabel: t('common.save') });
+      if (!newName) return null;
+      site = { ...site, id: '', name: newName.trim() };
     }
     if (!site.name.trim()) site.name = site.username && site.host ? `${site.username}@${site.host}` : site.host || site.s3.bucket || t('site.newSite');
     setBusy('save');
     try {
+      // Stored secrets arrive as placeholders that only resolve against their own site: save
+      // the copy over a duplicate of the original so passwords and keys are kept.
+      if (newName && draft.id && JSON.stringify(site).includes(SECRET_PLACEHOLDER)) {
+        site.id = (await call('sites.duplicate', { id: draft.id })).id;
+      }
       const saved = await call('sites.save', { site });
       await reload(saved.id);
       setExtraFolders((f) => f.filter((x) => x !== saved.folder));

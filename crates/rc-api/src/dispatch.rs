@@ -105,11 +105,16 @@ pub async fn dispatch(state: &Arc<AppState>, origin: &Origin, method: &str, para
             struct P {
                 settings: Settings,
             }
-            let p: P = parse(params)?;
+            let mut p: P = parse(params)?;
             let (old_disc, old_jobs) = {
                 let s = st.settings.read();
                 (serde_json::to_value(&s.discovery).ok(), s.max_concurrent_jobs)
             };
+            if matches!(origin, Origin::Web { .. }) {
+                // The server settings decide what web users may do (shell access); a web
+                // user must not be able to grant themselves more.
+                p.settings.server = st.settings.read().server.clone();
+            }
             *st.settings.write() = p.settings.clone();
             st.save_settings()?;
             if old_jobs != p.settings.max_concurrent_jobs {

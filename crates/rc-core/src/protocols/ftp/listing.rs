@@ -150,7 +150,8 @@ fn parse_unix(line: &str, dir: &str, now: DateTime<Utc>) -> Option<FileEntry> {
     if !"-dlpcbsDn".contains(type_char) || first.len() < 10 {
         return None;
     }
-    let perms = &first[1..10];
+    // `get`: byte 10 may lie inside a multi-byte character (names-only listings).
+    let perms = first.get(1..10)?;
     if !perms.chars().all(|c| "rwxsStTlL-".contains(c)) {
         return None;
     }
@@ -350,6 +351,8 @@ mod tests {
         assert_eq!(nogroup.size, 100);
 
         assert!(parse_list_line("total 12", "/", now()).is_none());
+        // Must not panic on a multi-byte character at byte 10 (names-only LIST output).
+        let _ = parse_list_line("documentaçao", "/", now());
         assert!(parse_list_line("drwxr-xr-x 2 a b 4096 Jan 1 2020 .", "/", now()).is_none());
         let dev = parse_list_line("crw-rw---- 1 root disk 8, 0 Jan 1 2020 sda", "/", now()).unwrap();
         assert_eq!(dev.kind, FileKind::Other);

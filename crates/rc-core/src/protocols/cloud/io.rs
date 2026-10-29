@@ -95,6 +95,9 @@ pub(super) struct DavWriter {
     tx: Option<mpsc::Sender<BodyChunk>>,
     task: Option<JoinHandle<reqwest::Result<reqwest::Response>>>,
     path: String,
+    /// Announced `Content-Length`: hyper silently cuts off a longer body.
+    size: Option<u64>,
+    written: u64,
 }
 
 impl DavWriter {
@@ -108,7 +111,7 @@ impl DavWriter {
         if let Some(n) = size {
             req = req.header(reqwest::header::CONTENT_LENGTH, n);
         }
-        DavWriter { tx: Some(tx), task: Some(tokio::spawn(req.send())), path }
+        DavWriter { tx: Some(tx), task: Some(tokio::spawn(req.send())), path, size, written: 0 }
     }
 
     async fn outcome(&mut self) -> Result<()> {
@@ -130,6 +133,13 @@ impl DavWriter {
 impl FileWriter for DavWriter {
     async fn write_all(&mut self, buf: &[u8]) -> Result<()> {
         let tx = self.tx.as_ref().ok_or_else(|| Error::other(format!("{}: upload already failed", self.path)))?;
+        if let Some(size) = self.size.filter(|&n| self.written + buf.len() as u64 > n) {
+            // The source grew: abort instead of storing a truncated file.
+            let _ = tx.send(Err(std::io::Error::other("more data than announced"))).await;
+            self.tx = None;
+            return Err(Error::InvalidInput(format!("{}: more data than the announced {size} bytes", self.path)));
+        }
+        self.written += buf.len() as u64;
         if tx.send(Ok(Bytes::copy_from_slice(buf))).await.is_err() {
             // The request ended before the body was complete: report why.
             self.tx = None;

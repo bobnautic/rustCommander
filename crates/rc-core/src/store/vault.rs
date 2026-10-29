@@ -92,12 +92,7 @@ impl Vault {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        std::fs::write(&path, B64.encode(k))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-        }
+        crate::store::write_private(&path, B64.encode(k).as_bytes())?;
         Ok(k)
     }
 

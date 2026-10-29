@@ -88,13 +88,23 @@ pub async fn connect_site(state: &Arc<AppState>, site: SiteConfig) -> Result<Ses
 /// SFTP (see [`rc_core::connect_with_shell_fallback`]).
 pub async fn connect_site_opts(
     state: &Arc<AppState>,
+    site: SiteConfig,
+    shell_fallback: bool,
+) -> Result<SessionSummary> {
+    connect_as(state, site, shell_fallback, None).await
+}
+
+/// Connect; with `reuse_id` the new connection replaces that session under the same id.
+async fn connect_as(
+    state: &Arc<AppState>,
     mut site: SiteConfig,
     shell_fallback: bool,
+    reuse_id: Option<&str>,
 ) -> Result<SessionSummary> {
     if site.protocol == Protocol::Local {
         return Ok(state.session(LOCAL_SESSION)?.summary.clone());
     }
-    let id = uuid::Uuid::new_v4().to_string();
+    let id = reuse_id.map(str::to_string).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let saved_id = Some(site.id.clone()).filter(|i| !i.is_empty() && state.sites.exists(i));
     let st = state.clone();
     let sid = saved_id.clone();
@@ -144,7 +154,11 @@ pub async fn connect_site_opts(
         connected_at: chrono::Utc::now().timestamp(),
     };
     tracing::info!(session = %id, "connected to {}", site.display_name());
-    state.sessions.write().insert(id.clone(), Arc::new(Session { summary: summary.clone(), vfs, site }));
+    let replaced = state.sessions.write().insert(id.clone(), Arc::new(Session { summary: summary.clone(), vfs, site }));
+    if let Some(old) = replaced {
+        stop_bound(state, &id);
+        let _ = old.vfs.close().await;
+    }
     state.events.emit("session.opened", &summary);
     Ok(summary)
 }
@@ -160,7 +174,15 @@ pub async fn close(state: &AppState, id: &str) -> Result<()> {
         return Err(Error::InvalidInput("the local session cannot be closed".into()));
     }
     let s = state.sessions.write().remove(id).ok_or_else(|| Error::NotFound(format!("session {id}")))?;
-    // Stop things bound to the session.
+    stop_bound(state, id);
+    let _ = s.vfs.close().await;
+    tracing::info!(session = %id, "disconnected from {}", s.summary.name);
+    state.events.emit("session.closed", serde_json::json!({ "id": id, "reason": null }));
+    Ok(())
+}
+
+/// Stop the tunnels and terminals that run over a session's connection.
+fn stop_bound(state: &AppState, id: &str) {
     state.tunnels.lock().retain(|_, t| t.status().session != id);
     let terms: Vec<String> =
         state.terminals.lock().values().filter(|t| t.session == id).map(|t| t.id.clone()).collect();
@@ -169,12 +191,9 @@ pub async fn close(state: &AppState, id: &str) -> Result<()> {
             let _ = t.input.send(rc_core::TerminalInput::Close);
         }
     }
-    let _ = s.vfs.close().await;
-    tracing::info!(session = %id, "disconnected from {}", s.summary.name);
-    state.events.emit("session.closed", serde_json::json!({ "id": id, "reason": null }));
-    Ok(())
 }
 
+/// Reconnect keeps the session id, so panels and tabs that show the session stay attached.
 pub async fn reconnect(state: &Arc<AppState>, id: &str) -> Result<SessionSummary> {
     let old = state.session(id)?;
     if id == LOCAL_SESSION {
@@ -184,8 +203,7 @@ pub async fn reconnect(state: &Arc<AppState>, id: &str) -> Result<SessionSummary
     if let Some(sid) = &old.summary.site_id {
         site.id = sid.clone();
     }
-    let _ = close(state, id).await;
-    connect_site(state, site).await
+    connect_as(state, site, false, Some(id)).await
 }
 
 pub fn info(state: &AppState, id: &str) -> Result<SessionInfo> {

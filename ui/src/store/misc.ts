@@ -76,6 +76,44 @@ interface SearchStore {
 
 export const useSearch = create<SearchStore>(() => ({ run: null }));
 
+type SearchDone = Pick<SearchRun, 'scanned' | 'cancelled' | 'error'>;
+
+/** Events of searches the UI does not know (yet): a small search can finish before
+ * `search.start` has returned its id. */
+const early = new Map<string, { at: number; results: FileEntry[]; done?: SearchDone }>();
+
+function earlyFor(id: string) {
+  const now = Date.now();
+  for (const [k, v] of early) if (now - v.at > 30_000) early.delete(k);
+  let e = early.get(id);
+  if (!e) {
+    e = { at: now, results: [] };
+    early.set(id, e);
+  }
+  return e;
+}
+
+export function onSearchResult(id: string, entries: FileEntry[]) {
+  const run = useSearch.getState().run;
+  if (run?.id === id) useSearch.setState({ run: { ...run, results: [...run.results, ...entries] } });
+  else earlyFor(id).results.push(...entries);
+}
+
+export function onSearchDone(id: string, done: SearchDone) {
+  const run = useSearch.getState().run;
+  if (run?.id === id) useSearch.setState({ run: { ...run, running: false, ...done } });
+  else earlyFor(id).done = done;
+}
+
+/** Show a search that was just started, with whatever already arrived for it. */
+export function beginSearch(id: string, params: SearchParams) {
+  const e = early.get(id);
+  early.delete(id);
+  useSearch.setState({
+    run: { id, params, results: e?.results ?? [], running: !e?.done, startedAt: Date.now(), ...e?.done },
+  });
+}
+
 // ---------------------------------------------------------------- background helpers (watches, external edits, tunnels)
 
 interface BgStore {

@@ -461,7 +461,8 @@ impl CloudVfs {
             let resp =
                 req.send().await.map_err(|e| Error::ConnectionLost(format!("{norm_from}: {}", reqwest_error(&e))))?;
             let status = resp.status().as_u16();
-            if (200..300).contains(&status) {
+            // 207 Multi-Status reports members that could not be moved (RFC 4918, 9.9.4).
+            if (200..300).contains(&status) && status != 207 {
                 return Ok(());
             }
             let body = resp.text().await.unwrap_or_default();
@@ -662,6 +663,14 @@ impl Vfs for CloudVfs {
         let (norm_to, op_to, rel_to) = self.resolve_object(to).await?;
         if op.info().name() != op_to.info().name() {
             return Err(Error::unsupported("moving between buckets"));
+        }
+        if norm_from == norm_to {
+            // Copy + delete onto itself would delete the object.
+            return Ok(());
+        }
+        if vpath::relative_to(&norm_to, &norm_from).is_some() {
+            // The copies would land below the source prefix and be deleted with it.
+            return Err(Error::InvalidInput(format!("cannot move {norm_from} into itself")));
         }
         let meta = self.lookup(&op, &rel_from, &norm_from).await?.ok_or_else(|| Error::NotFound(norm_from.clone()))?;
         if meta.is_dir() {

@@ -116,6 +116,10 @@ impl FileReader for FtpReader {
             let Some(stream) = self.stream.as_mut() else { return Ok(0) };
             let n = match tokio::time::timeout(self.timeout, stream.read(buf)).await {
                 Ok(Ok(n)) => n,
+                // Some FTPS servers close the data connection without a TLS close_notify
+                // (plain TCP never reports this). The 226 reply below decides whether the
+                // transfer was complete.
+                Ok(Err(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => 0,
                 Ok(Err(e)) => {
                     self.fail();
                     return Err(Error::ConnectionLost(format!("{}: {e}", self.path)));

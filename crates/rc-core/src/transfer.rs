@@ -266,15 +266,30 @@ impl TransferTask {
     /// Returns Ok(true) when moved by rename, Ok(false) to fall back to copy+delete.
     async fn try_rename(&self, ctx: &JobCtx, src: &FileEntry, dst_path: &str) -> Result<bool> {
         let vfs = &self.dst.vfs;
+        let count_file = || {
+            if !src.is_dir() {
+                ctx.add_total(src.size, 1);
+                ctx.add_bytes(src.size);
+                ctx.file_done();
+            }
+        };
         if let Some(target) = vfs.try_stat(dst_path).await? {
             if src.is_dir() && target.is_dir() {
                 // Merge directories: copy+delete handles that.
                 return Ok(false);
             }
+            if target.is_dir() {
+                // As when copying: a file never replaces a whole directory tree.
+                return Err(Error::IsADirectory(dst_path.to_string()));
+            }
             match self.decide(ctx, src, &target).await? {
-                Decision::Skip => return Ok(true),
+                Decision::Skip => {
+                    count_file();
+                    return Ok(true);
+                }
                 Decision::Write { path, .. } if path != dst_path => {
                     vfs.rename(&src.path, &path).await?;
+                    count_file();
                     return Ok(true);
                 }
                 Decision::Write { offset, .. } if offset > 0 => return Ok(false),
@@ -285,11 +300,7 @@ impl TransferTask {
         }
         match vfs.rename(&src.path, dst_path).await {
             Ok(()) => {
-                if !src.is_dir() {
-                    ctx.add_total(src.size, 1);
-                    ctx.add_bytes(src.size);
-                    ctx.file_done();
-                }
+                count_file();
                 Ok(true)
             }
             Err(Error::Unsupported(_)) => Ok(false),
@@ -503,7 +514,12 @@ impl TransferTask {
             .vfs
             .open_write(
                 dst_path,
-                crate::types::WriteOptions { offset, size_hint: Some(src.size.saturating_sub(offset)), mode: None },
+                crate::types::WriteOptions {
+                    offset,
+                    // Line-ending conversion changes the size (SCP announces it up front).
+                    size_hint: (!text).then(|| src.size.saturating_sub(offset)),
+                    mode: None,
+                },
             )
             .await?;
         let to_crlf = text && self.dst.vfs.protocol() == Protocol::Local && cfg!(windows);
@@ -828,6 +844,28 @@ mod tests {
         let done = q.wait(&job.id).await.unwrap();
         assert_eq!(done.state, JobState::Completed, "{:?}", done.errors);
         assert_eq!(read_to_end(vfs.as_ref(), &dst, 10_000_000).await.unwrap(), big);
+    }
+
+    #[tokio::test]
+    async fn move_never_replaces_a_directory_with_a_file() {
+        let (_d, base, vfs) = setup().await;
+        // dst/a.txt is a directory with content; moving the file src/a.txt there must fail.
+        let keep = vpath::join(&base, "dst/a.txt/keep");
+        vfs.mkdir_all(&vpath::parent(&keep)).await.unwrap();
+        write_all(vfs.as_ref(), &keep, b"k").await.unwrap();
+        let q = queue();
+        let ep = Endpoint::new("local", vfs.clone());
+        let task = TransferTask {
+            src: ep.clone(),
+            src_paths: vec![vpath::join(&base, "src/a.txt")],
+            dst: ep,
+            dst_dir: vpath::join(&base, "dst"),
+            options: TransferOptions { move_files: true, overwrite: OverwriteMode::Overwrite, ..Default::default() },
+        };
+        let job = q.submit(JobKind::Transfer, JobSpec::default(), Arc::new(task), 0);
+        assert_eq!(q.wait(&job.id).await.unwrap().state, JobState::Failed);
+        assert!(vfs.try_stat(&keep).await.unwrap().is_some());
+        assert!(vfs.try_stat(&vpath::join(&base, "src/a.txt")).await.unwrap().is_some());
     }
 
     #[test]

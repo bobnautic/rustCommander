@@ -448,6 +448,8 @@ impl Vfs for LocalVfs {
             cmd.current_dir(to_native(d));
         }
         cmd.stdin(std::process::Stdio::null());
+        // Do not leave the command running when it times out.
+        cmd.kill_on_drop(true);
         let out = tokio::time::timeout(Duration::from_secs(600), cmd.output())
             .await
             .map_err(|_| Error::Timeout("command".into()))??;

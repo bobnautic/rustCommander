@@ -131,6 +131,26 @@ try {
     eq(out, "const a = { b: 'c' }\nlet d = 'e'\nlet x = 1\nlet y = 2\nlet z = 3\n");
   });
 
+  await test('paths: backslashes, drive roots', async () => {
+    const P = await load('/src/lib/paths.ts');
+    eq(P.join('/srv', 'a\\b.txt'), '/srv/a\\b.txt', 'POSIX names keep backslashes');
+    eq(P.normalize('C:\\Users\\me'), 'C:/Users/me');
+    eq(P.parent('C:/'), '/', 'drive root goes up to the drive list');
+    eq(P.parent('C:/Users'), 'C:/');
+    eq(P.parent('/'), null);
+    eq(P.resolve('C:/Users', '..\\Windows'), 'C:/Windows');
+  });
+
+  await test('sizes round across unit boundaries', async () => {
+    const f = await load('/src/lib/format.ts');
+    f.setFormatLocale('en');
+    eq(f.formatBytes(1023), '1023 B');
+    eq(f.formatBytes(1536), '1.5 KB');
+    eq(f.formatBytes(102349), '100 KB');
+    eq(f.formatBytes(1048575), '1.0 MB');
+    eq(f.formatBytes(5 * 1024 ** 3), '5.0 GB');
+  });
+
   await test('SQL formatter', async () => {
     const m = await import('sql-formatter');
     const out = m.formatDialect('select a,b from t where x=1', { dialect: m.postgresql, keywordCase: 'preserve', tabWidth: 2 });

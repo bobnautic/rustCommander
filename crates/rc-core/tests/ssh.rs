@@ -401,6 +401,22 @@ async fn file_ops(vfs: &dyn Vfs, tag: &str) {
         Err(Error::AlreadyExists(_)) => {}
         Err(e) => panic!("rename over existing file: {e:?}"),
     }
+    // Shell metacharacters in names are data, never commands (SCP mode builds shell
+    // commands); renaming onto an existing directory must fail without running anything.
+    let odd = path::join(&dir, "it's \"odd\" `touch PWNED` $(touch PWNED) \\x2d");
+    vfs.mkdir(&odd).await.unwrap();
+    assert!(vfs.list(&dir).await.unwrap().iter().any(|e| e.path == odd && e.is_dir()));
+    let h = path::join(&dir, "to-move.txt");
+    write_all(vfs, &h, b"m").await.unwrap();
+    assert!(vfs.rename(&h, &odd).await.is_err());
+    // (commands run in the home directory)
+    let pwned = path::join(&vfs.home().await.unwrap(), "PWNED");
+    assert!(vfs.try_stat(&pwned).await.unwrap().is_none(), "a file name was executed");
+    let odd_file = path::join(&odd, "f`id`.txt");
+    vfs.rename(&h, &odd_file).await.unwrap();
+    assert_eq!(read_string(vfs, &odd_file).await, "m");
+    vfs.remove_dir_all(&odd).await.unwrap();
+
     let c = path::join(&dir, "copy.txt");
     vfs.copy_file(&g, &c).await.unwrap();
     assert_eq!(read_string(vfs, &c).await, read_string(vfs, &g).await);
