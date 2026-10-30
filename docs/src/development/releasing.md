@@ -26,6 +26,14 @@ as `-beta.1`).
    version (`0.2.0`) and run it. The tag `v0.2.0` is then created on that branch's latest
    commit when the release is published.
 
+   A release created by hand works as well: **Releases → Draft a new release**, choose a
+   *new* tag `v0.2.0`, write the notes and **Publish release**. Publishing creates the tag,
+   which starts the workflow. Until the files are built (about 25 minutes) the release shows
+   a note with a link to the build; then the files and the download table are added above
+   the notes written there. The tag must not exist before, otherwise no build starts. This
+   way needs the repository setting *immutable releases* to be off, because the files are
+   added after publishing.
+
 The workflow always builds with the version from the tag (it runs `set-version.mjs` itself),
 so the installers, the app and `rcmd --version` carry that version even if step 1 was
 skipped.
@@ -57,7 +65,9 @@ Pull requests that change the release workflow, `scripts/set-version.mjs` or
 as workflow artifacts only), so packaging changes are tested before they reach a release.
 
 If a run failed for a transient reason, **Re-run failed jobs** on the run continues it. When
-the release already exists, the publish job replaces its files.
+the release already exists, the publish job replaces its files and its download table and
+keeps the rest of the notes. A release created by hand says so in its notes when the build
+failed.
 
 ## Code signing
 
