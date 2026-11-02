@@ -871,3 +871,90 @@ async fn scp_busybox_ls() {
     assert_eq!(style.as_deref(), Some("ls --full-time"));
     file_ops(vfs.as_ref(), "busybox").await;
 }
+
+/// The server-side shortcuts (`rm -rf`, `du`, `find`/`grep`, `find -exec chmod`) give the
+/// same results as the generic per-file way.
+async fn server_side_shortcuts(vfs: Arc<dyn Vfs>, tag: &str) {
+    use rc_core::jobs::{JobKind, JobQueue, JobSpec, JobState};
+    use rc_core::search::{search, SearchParams};
+    use rc_core::transfer::{DeleteTask, Endpoint};
+    use tokio_util::sync::CancellationToken;
+
+    assert!(remote::available(vfs.as_ref()));
+    assert!(remote::same_view(vfs.as_ref()).await, "shell and file protocol see the same home");
+    let dir = scratch(vfs.as_ref(), tag).await;
+    for (p, c) in [
+        ("tree/a.log", "hello World"),
+        ("tree/sub/b.log", "nothing here"),
+        ("tree/sub/it's c.txt", "WORLD peace"),
+        ("tree/.hidden/d.log", "world"),
+        ("tree/-dash.log", "World"),
+    ] {
+        let full = path::join(&dir, p);
+        vfs.mkdir_all(&path::parent(&full)).await.unwrap();
+        write_all(vfs.as_ref(), &full, c.as_bytes()).await.unwrap();
+    }
+    let tree = path::join(&dir, "tree");
+
+    // du: the same numbers as walking the tree.
+    let fast = remote::dir_size(vfs.as_ref(), &tree).await.unwrap().expect("GNU find on the server");
+    let mut slow = ops::DirSize::default();
+    ops::walk(vfs.as_ref(), &tree, &ops::WalkOptions::default(), |w| {
+        if w.is_dir {
+            slow.dirs += 1;
+        } else {
+            slow.files += 1;
+            slow.size += w.entry.size;
+        }
+        Ok(true)
+    })
+    .await
+    .unwrap();
+    assert_eq!((fast.size, fast.files, fast.dirs), (slow.size, slow.files, slow.dirs));
+
+    // find + grep: content search without downloading, hidden entries skipped.
+    let mut found = vec![];
+    let p = SearchParams { root: tree.clone(), content_text: Some("world".into()), ..Default::default() };
+    let s = search(vfs.as_ref(), &p, CancellationToken::new(), |b| found.extend(b)).await.unwrap();
+    let mut names: Vec<String> = found.iter().map(|e| e.name.clone()).collect();
+    names.sort();
+    assert_eq!(names, vec!["-dash.log", "a.log", "it's c.txt"]);
+    assert_eq!(s.found, 3);
+    assert!(found.iter().all(|e| e.modified.is_some() && e.permissions.is_some()));
+    let p = SearchParams { root: tree.clone(), name_mask: "*.log".into(), include_hidden: true, ..Default::default() };
+    let mut found = vec![];
+    search(vfs.as_ref(), &p, CancellationToken::new(), |b| found.extend(b)).await.unwrap();
+    assert_eq!(found.len(), 4);
+
+    // chmod/chown of a tree (symlinks untouched).
+    let attrs = remote::TreeAttributes { file_mode: Some(0o600), dir_mode: Some(0o750), ..Default::default() };
+    assert!(remote::set_tree_attributes(vfs.as_ref(), &tree, &attrs).await.unwrap());
+    assert_eq!(vfs.stat(&path::join(&tree, "sub")).await.unwrap().permissions, Some(0o750));
+    assert_eq!(vfs.stat(&path::join(&tree, "sub/b.log")).await.unwrap().permissions, Some(0o600));
+    assert_eq!(vfs.stat(&tree).await.unwrap().permissions, Some(0o750));
+
+    // rm -rf through the delete job.
+    let q = JobQueue::new(1, Arc::new(|_| {}));
+    let task = DeleteTask::new(Endpoint::new("s", vfs.clone()), vec![tree.clone()]);
+    let job = q.submit(JobKind::Delete, JobSpec::default(), Arc::new(task), 0);
+    let done = q.wait(&job.id).await.unwrap();
+    assert_eq!(done.state, JobState::Completed, "{:?}", done.errors);
+    assert!(vfs.try_stat(&tree).await.unwrap().is_none());
+    // Never the root, never a relative path.
+    assert!(!remote::remove_tree(vfs.as_ref(), "/").await.unwrap());
+    vfs.remove_dir_all(&dir).await.unwrap();
+}
+
+#[tokio::test]
+async fn sftp_server_side_shortcuts() {
+    let s = site_or_skip!(Protocol::Sftp);
+    let vfs = connect(&s, &ctx()).await.unwrap();
+    server_side_shortcuts(vfs, "fast-sftp").await;
+}
+
+#[tokio::test]
+async fn scp_server_side_shortcuts() {
+    let s = site_or_skip!(Protocol::Scp);
+    let vfs = connect(&s, &ctx()).await.unwrap();
+    server_side_shortcuts(vfs, "fast-scp").await;
+}

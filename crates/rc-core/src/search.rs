@@ -37,7 +37,32 @@ pub struct SearchSummary {
 /// Content search reads at most this much of each file.
 const MAX_CONTENT_BYTES: u64 = 64 * 1024 * 1024;
 
-/// Run a search. `on_results` receives batches of matches.
+/// Does `e` pass the name, size and date filters?
+fn matches_filters(params: &SearchParams, name_mask: &FileMask, e: &FileEntry, is_dir: bool) -> bool {
+    if is_dir && !params.include_dirs {
+        return false;
+    }
+    if !name_mask.is_empty() && !name_mask.matches_name(&e.name) {
+        return false;
+    }
+    if !is_dir && (params.min_size.is_some_and(|m| e.size < m) || params.max_size.is_some_and(|m| e.size > m)) {
+        return false;
+    }
+    if let Some(after) = params.modified_after {
+        if e.modified.is_none_or(|m| m < after) {
+            return false;
+        }
+    }
+    if let Some(before) = params.modified_before {
+        if e.modified.is_none_or(|m| m > before) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Run a search. `on_results` receives batches of matches. On SSH hosts the tree is listed
+/// by `find` and contents are searched by `grep` on the server (nothing is downloaded).
 pub async fn search(
     vfs: &dyn Vfs,
     params: &SearchParams,
@@ -45,7 +70,8 @@ pub async fn search(
     mut on_results: impl FnMut(Vec<FileEntry>) + Send,
 ) -> Result<SearchSummary> {
     let name_mask = FileMask::parse(&params.name_mask).map_err(Error::InvalidInput)?;
-    let needle = params.content_text.as_deref().filter(|s| !s.is_empty()).map(|s| {
+    let content = params.content_text.as_deref().filter(|s| !s.is_empty());
+    let needle = content.map(|s| {
         if params.case_sensitive {
             s.as_bytes().to_vec()
         } else {
@@ -54,48 +80,20 @@ pub async fn search(
             s.to_ascii_lowercase().into_bytes()
         }
     });
-    let opts = WalkOptions {
-        mask: FileMask::default(),
-        exclude_hidden: !params.include_hidden,
-        follow_symlinks: false,
-        max_depth: params.max_depth,
-        concurrency: 8,
-    };
     let mut summary = SearchSummary::default();
     let mut candidates: Vec<FileEntry> = Vec::new();
     let mut batch: Vec<FileEntry> = Vec::new();
     let mut last_flush = std::time::Instant::now();
-    ops::walk(vfs, &params.root, &opts, |item| {
-        if cancel.is_cancelled() {
-            return Ok(false);
-        }
+    let mut visit = |e: FileEntry, is_dir: bool, summary: &mut SearchSummary| {
         summary.scanned += 1;
-        let e = item.entry;
-        if item.is_dir && !params.include_dirs {
-            return Ok(true);
-        }
-        if !name_mask.is_empty() && !name_mask.matches_name(&e.name) {
-            return Ok(true);
-        }
-        if !item.is_dir && (params.min_size.is_some_and(|m| e.size < m) || params.max_size.is_some_and(|m| e.size > m))
-        {
-            return Ok(true);
-        }
-        if let Some(after) = params.modified_after {
-            if e.modified.is_none_or(|m| m < after) {
-                return Ok(true);
-            }
-        }
-        if let Some(before) = params.modified_before {
-            if e.modified.is_none_or(|m| m > before) {
-                return Ok(true);
-            }
+        if !matches_filters(params, &name_mask, &e, is_dir) {
+            return;
         }
         if needle.is_some() {
-            if !item.is_dir {
+            if !is_dir {
                 candidates.push(e);
             }
-            return Ok(true);
+            return;
         }
         summary.found += 1;
         batch.push(e);
@@ -103,25 +101,70 @@ pub async fn search(
             on_results(std::mem::take(&mut batch));
             last_flush = std::time::Instant::now();
         }
-        Ok(true)
-    })
-    .await?;
-    if !batch.is_empty() {
-        on_results(std::mem::take(&mut batch));
-    }
-    if let Some(needle) = needle {
-        for e in candidates {
+    };
+
+    let listed = if crate::remote::available(vfs) {
+        crate::remote::find_entries(vfs, &params.root, params.max_depth, params.include_hidden, &cancel).await?
+    } else {
+        None
+    };
+    if let Some(entries) = listed {
+        for e in entries {
             if cancel.is_cancelled() {
                 break;
             }
-            match contains(vfs, &e.path, &needle, params.case_sensitive, &cancel).await {
-                Ok(true) => {
-                    summary.found += 1;
-                    on_results(vec![e]);
-                }
-                Ok(false) => {}
-                Err(err) => tracing::debug!("search {}: {err}", e.path),
+            let is_dir = e.kind == crate::types::FileKind::Dir;
+            visit(e, is_dir, &mut summary);
+        }
+    } else {
+        let opts = WalkOptions {
+            mask: FileMask::default(),
+            exclude_hidden: !params.include_hidden,
+            follow_symlinks: false,
+            max_depth: params.max_depth,
+            concurrency: 8,
+        };
+        ops::walk(vfs, &params.root, &opts, |item| {
+            if cancel.is_cancelled() {
+                return Ok(false);
             }
+            visit(item.entry, item.is_dir, &mut summary);
+            Ok(true)
+        })
+        .await?;
+    }
+    if !batch.is_empty() {
+        on_results(std::mem::take(&mut batch));
+    }
+    let (Some(needle), Some(text)) = (needle, content) else {
+        summary.cancelled = cancel.is_cancelled();
+        return Ok(summary);
+    };
+    if crate::remote::available(vfs) && !candidates.is_empty() {
+        let paths: Vec<String> = candidates.iter().map(|e| e.path.clone()).collect();
+        let by_path: std::collections::HashMap<&str, &FileEntry> =
+            candidates.iter().map(|e| (e.path.as_str(), e)).collect();
+        let grepped = crate::remote::grep_files(vfs, text, params.case_sensitive, &paths, &cancel, |hits| {
+            on_results(hits.iter().filter_map(|p| by_path.get(p.as_str()).map(|e| (*e).clone())).collect());
+        })
+        .await?;
+        if let Some(found) = grepped {
+            summary.found += found as u64;
+            summary.cancelled = cancel.is_cancelled();
+            return Ok(summary);
+        }
+    }
+    for e in candidates {
+        if cancel.is_cancelled() {
+            break;
+        }
+        match contains(vfs, &e.path, &needle, params.case_sensitive, &cancel).await {
+            Ok(true) => {
+                summary.found += 1;
+                on_results(vec![e]);
+            }
+            Ok(false) => {}
+            Err(err) => tracing::debug!("search {}: {err}", e.path),
         }
     }
     summary.cancelled = cancel.is_cancelled();

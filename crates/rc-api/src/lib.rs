@@ -9,6 +9,7 @@ pub mod dispatch;
 pub mod events;
 pub mod handlers;
 pub mod logs;
+pub mod persist;
 pub mod prompts;
 pub mod server;
 pub mod settings;

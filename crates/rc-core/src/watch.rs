@@ -183,12 +183,7 @@ pub fn start(
                     ..Default::default()
                 };
                 st.lock().last_event = Some(format!("delete {}", deletes.join(", ")));
-                queue.submit(
-                    JobKind::Delete,
-                    spec,
-                    Arc::new(DeleteTask { target: params.remote.clone(), paths: deletes }),
-                    0,
-                );
+                queue.submit(JobKind::Delete, spec, Arc::new(DeleteTask::new(params.remote.clone(), deletes)), 0);
             }
             on_update(st.lock().clone());
         }

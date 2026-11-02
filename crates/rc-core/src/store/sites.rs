@@ -25,6 +25,18 @@ fn secret_fields(s: &mut SiteConfig) -> [&mut Option<String>; 7] {
     ]
 }
 
+/// A copy of `site` without any secret (also of an inline jump host). Connecting with it
+/// asks for the password again.
+pub fn without_secrets(mut site: SiteConfig) -> SiteConfig {
+    for f in secret_fields(&mut site) {
+        *f = None;
+    }
+    if let Some(j) = site.ssh.jump.take() {
+        site.ssh.jump = Some(Box::new(without_secrets(*j)));
+    }
+    site
+}
+
 pub struct SiteStore {
     path: Option<PathBuf>,
     sites: RwLock<Vec<SiteConfig>>,

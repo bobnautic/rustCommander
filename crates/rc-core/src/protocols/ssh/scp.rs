@@ -183,6 +183,7 @@ impl Vfs for ScpVfs {
             set_modified: true,
             server_checksum: true,
             disk_info: true,
+            checksum_algos: ChecksumAlgo::ALL.to_vec(),
         }
     }
 

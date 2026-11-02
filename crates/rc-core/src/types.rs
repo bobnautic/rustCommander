@@ -220,6 +220,9 @@ pub struct Capabilities {
     pub set_modified: bool,
     pub server_checksum: bool,
     pub disk_info: bool,
+    /// Algorithms the server computes itself (no download needed), best first.
+    #[serde(default)]
+    pub checksum_algos: Vec<ChecksumAlgo>,
 }
 
 /// Free / total space of the file system that holds a path.
@@ -249,6 +252,9 @@ pub enum ChecksumAlgo {
 }
 
 impl ChecksumAlgo {
+    /// All algorithms, strongest first.
+    pub const ALL: [ChecksumAlgo; 3] = [ChecksumAlgo::Sha256, ChecksumAlgo::Sha1, ChecksumAlgo::Md5];
+
     pub fn command(self) -> &'static str {
         match self {
             ChecksumAlgo::Md5 => "md5sum",
@@ -281,6 +287,9 @@ pub struct WriteOptions {
     pub size_hint: Option<u64>,
     /// Permission bits for newly created files, if the protocol supports it.
     pub mode: Option<u32>,
+    /// Modification time to record with the new file (Unix seconds). Object stores keep it
+    /// as user metadata (`mtime`), since they cannot change the time of an object later.
+    pub modified: Option<i64>,
 }
 
 #[cfg(test)]

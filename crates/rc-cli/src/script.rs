@@ -458,7 +458,7 @@ impl Script {
                 if paths.is_empty() {
                     bail!("usage: {cmd} <path...>");
                 }
-                let task = DeleteTask { target: Endpoint::new("r", r.vfs.clone()), paths };
+                let task = DeleteTask::new(Endpoint::new("r", r.vfs.clone()), paths);
                 self.run_job(JobKind::Delete, "Delete".into(), Arc::new(task), 0).await?;
             }
             "mkdir" => {
@@ -586,8 +586,34 @@ impl Script {
                 if args.flag("preview") {
                     return Ok(true);
                 }
-                let actions: Vec<_> =
-                    plan.actions.into_iter().filter(|a| a.action != rc_core::sync::SyncActionKind::Conflict).collect();
+                // Conflicts (both sides changed): -conflict=skip (default) | local | remote
+                // | both (keep both versions) | fail.
+                use rc_core::sync::{ConflictResolution, SyncActionKind};
+                let policy = args.value("conflict").unwrap_or_else(|| "skip".into()).to_ascii_lowercase();
+                let resolution = match policy.as_str() {
+                    "skip" => None,
+                    "local" | "left" => Some(ConflictResolution::LeftWins),
+                    "remote" | "right" => Some(ConflictResolution::RightWins),
+                    "both" | "keep" => Some(ConflictResolution::KeepBoth),
+                    "fail" => {
+                        let n = plan.actions.iter().filter(|a| a.action == SyncActionKind::Conflict).count();
+                        if n > 0 {
+                            bail!("{n} conflict(s): both sides changed (use -conflict=local|remote|both|skip)");
+                        }
+                        None
+                    }
+                    c => bail!("unknown conflict policy {c} (skip, local, remote, both, fail)"),
+                };
+                let actions: Vec<_> = plan
+                    .actions
+                    .into_iter()
+                    .filter_map(|mut a| {
+                        if a.action == SyncActionKind::Conflict {
+                            a.resolution = Some(resolution?);
+                        }
+                        Some(a)
+                    })
+                    .collect();
                 let task =
                     rc_core::sync::SyncTask { left, right, params, actions, options: Self::transfer_options(&args) };
                 self.run_job(JobKind::Sync, "Synchronize".into(), Arc::new(task), 0).await?;
@@ -630,7 +656,7 @@ const HELP: &str = "Commands:
   put <local...> [remote]                  upload     (same switches, -permissions=644)
   rm <path...> | rmdir <dir> | mkdir <dir> | mv <from> <to> | cp <from> <dir>
   chmod <mode> <path...> | ln <target> <link> | stat <path> | checksum <alg> <path>
-  synchronize <remote|local|both> [local] [remote] [-delete] [-mirror] [-criteria=time|size|either|checksum] [-filemask=] [-preview]
+  synchronize <remote|local|both> [local] [remote] [-delete] [-mirror] [-criteria=time|size|either|checksum] [-filemask=] [-conflict=skip|local|remote|both|fail] [-preview]
   keepuptodate [local] [remote] [-delete] [-filemask=]
   call <command>                           run a command on the server
   echo <text> | help";

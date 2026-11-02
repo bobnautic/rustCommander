@@ -133,7 +133,13 @@ pub struct DirSize {
     pub dirs: u64,
 }
 
+/// Size of a directory tree (`du`-like on SSH hosts, a walk elsewhere).
 pub async fn dir_size(vfs: &dyn Vfs, path: &str) -> Result<DirSize> {
+    if crate::remote::available(vfs) {
+        if let Some(d) = crate::remote::dir_size(vfs, path).await? {
+            return Ok(d);
+        }
+    }
     let mut total = DirSize::default();
     walk(vfs, path, &WalkOptions::default(), |item| {
         if item.is_dir {
@@ -199,6 +205,24 @@ pub async fn stream_checksum(vfs: &dyn Vfs, path: &str, algo: ChecksumAlgo) -> R
         h.update(&buf[..n]);
     }
     Ok(h.finish())
+}
+
+/// Algorithms a session computes without downloading the file: the server-side ones, or
+/// all of them for the local file system (reading local files is cheap).
+fn cheap_algos(vfs: &dyn Vfs) -> Vec<ChecksumAlgo> {
+    if vfs.protocol() == Protocol::Local {
+        ChecksumAlgo::ALL.to_vec()
+    } else {
+        vfs.capabilities().checksum_algos
+    }
+}
+
+/// The checksum algorithm to compare files of two sessions with: the strongest one both
+/// compute without downloading (an S3 bucket only knows MD5, from the object metadata);
+/// SHA-256 when there is none.
+pub fn preferred_algo(a: &dyn Vfs, b: &dyn Vfs) -> ChecksumAlgo {
+    let (ca, cb) = (cheap_algos(a), cheap_algos(b));
+    ChecksumAlgo::ALL.into_iter().find(|x| ca.contains(x) && cb.contains(x)).unwrap_or(ChecksumAlgo::Sha256)
 }
 
 /// Remove a file or a directory tree.

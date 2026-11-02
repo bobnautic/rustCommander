@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ArrowLeft, ArrowLeftRight, ArrowRight, CircleAlert, File as FileIcon, Folder, FolderSync, Play, Radar, Square, Trash2, ArrowRightLeft,
+  ArrowLeft, ArrowLeftRight, ArrowRight, CircleAlert, File as FileIcon, Folder, FolderSync, GitCompare, Play, Radar, Square, Trash2, ArrowRightLeft,
 } from 'lucide-react';
-import type { SyncAction, SyncActionKind, SyncDirection, SyncParams } from '../../api/types';
+import type { ConflictResolution, SyncAction, SyncActionKind, SyncDirection, SyncParams } from '../../api/types';
 import { call, on } from '../../api/client';
 import { useT, type TKey } from '../../i18n';
 import { formatBytes, formatDate, formatNumber } from '../../lib/format';
 import { load, save } from '../../lib/storage';
+import { isDirLike } from '../../lib/fileTypes';
 import { setLayout, useApp } from '../../store/app';
 import { openDialog, type DialogPropsMap } from '../../store/dialogs';
 import { upsertBg, removeBg, useBg } from '../../store/misc';
@@ -148,19 +149,30 @@ const KIND_ICON: Record<SyncActionKind, typeof ArrowRight> = {
 };
 const KINDS: SyncActionKind[] = ['copyLeftToRight', 'copyRightToLeft', 'deleteLeft', 'deleteRight', 'conflict'];
 
-function actionBytes(a: SyncAction): number {
+function actionBytes(a: SyncAction, r?: ConflictResolution): number {
   if (a.isDir) return 0;
-  if (a.action === 'copyLeftToRight') return a.left?.size ?? 0;
-  if (a.action === 'copyRightToLeft') return a.right?.size ?? 0;
-  if (a.action === 'conflict') return Math.max(a.left?.size ?? 0, a.right?.size ?? 0);
+  if (a.action === 'copyLeftToRight' || r === 'leftWins') return a.left?.size ?? 0;
+  if (a.action === 'copyRightToLeft' || r === 'rightWins') return a.right?.size ?? 0;
+  if (r === 'keepBoth') return (a.left?.size ?? 0) + 2 * (a.right?.size ?? 0);
   return 0;
 }
+
+const RESOLUTIONS: ConflictResolution[] = ['leftWins', 'rightWins', 'keepBoth', 'skip'];
+
+/** The resolution offered first: the newer version wins. */
+function newerWins(a: SyncAction): ConflictResolution {
+  return (a.left?.modified ?? 0) >= (a.right?.modified ?? 0) ? 'leftWins' : 'rightWins';
+}
+
+type BulkResolution = ConflictResolution | 'newer';
 
 export function SyncChecklistDialog({ props, close }: DP<'syncChecklist'>) {
   const t = useT();
   const plan = props.plan;
   const sessions = useApp((s) => s.sessions);
   const [checked, setChecked] = useState<Set<string>>(() => new Set(plan.actions.filter((a) => a.action !== 'conflict').map((a) => a.id)));
+  // Conflicts stay unchecked until the user picks how to resolve them.
+  const [resolutions, setResolutions] = useState<Record<string, ConflictResolution>>({});
   const [hidden, setHidden] = useState<Set<SyncActionKind>>(new Set());
   const [busy, setBusy] = useState(false);
   const counts = useMemo(() => {
@@ -170,15 +182,54 @@ export function SyncChecklistDialog({ props, close }: DP<'syncChecklist'>) {
     return c;
   }, [plan]);
   const visible = plan.actions.filter((a) => !hidden.has(a.action));
-  const selected = plan.actions.filter((a) => checked.has(a.id));
-  const bytes = selected.reduce((s, a) => s + actionBytes(a), 0);
+  const selected = plan.actions.filter((a) => checked.has(a.id) && (a.action !== 'conflict' || (resolutions[a.id] ?? 'skip') !== 'skip'));
+  const bytes = selected.reduce((s, a) => s + actionBytes(a, resolutions[a.id]), 0);
+  const conflicts = plan.actions.filter((a) => a.action === 'conflict');
+  const resolve = (a: SyncAction, r: ConflictResolution) => {
+    setResolutions((m) => ({ ...m, [a.id]: r }));
+    setChecked((s) => {
+      const n = new Set(s);
+      if (r === 'skip') n.delete(a.id);
+      else n.add(a.id);
+      return n;
+    });
+  };
+  const resolveAll = (r: BulkResolution) => {
+    const targets = conflicts.filter((a) => !hidden.has(a.action));
+    setResolutions((m) => {
+      const n = { ...m };
+      for (const a of targets) n[a.id] = r === 'newer' ? newerWins(a) : r;
+      return n;
+    });
+    setChecked((s) => {
+      const n = new Set(s);
+      for (const a of targets) {
+        if (r === 'skip') n.delete(a.id);
+        else n.add(a.id);
+      }
+      return n;
+    });
+  };
+  const showDiff = (a: SyncAction) => {
+    if (!a.left || !a.right) return;
+    const side = (session: string, path: string) => ({ label: `${sname(session)}: ${path}`, session, path, fileName: a.left!.name });
+    openDialog('diff', { left: side(plan.params.leftSession, a.left.path), right: side(plan.params.rightSession, a.right.path), top: true });
+  };
   const sname = (id: string) => (id === 'local' ? t('session.local') : (sessions.find((s) => s.id === id)?.name ?? id));
-  const toggle = (id: string) => setChecked((s) => {
-    const n = new Set(s);
-    if (n.has(id)) n.delete(id);
-    else n.add(id);
-    return n;
-  });
+  const toggle = (id: string) => {
+    const a = plan.actions.find((x) => x.id === id);
+    if (a?.action === 'conflict') {
+      // Checking a conflict resolves it (newer wins) unless a resolution was chosen.
+      const cur = resolutions[id];
+      return resolve(a, checked.has(id) ? 'skip' : cur && cur !== 'skip' ? cur : newerWins(a));
+    }
+    setChecked((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  };
 
   const cancel = () => {
     void call('sync.discard', { planId: plan.id }).catch(() => undefined);
@@ -188,7 +239,9 @@ export function SyncChecklistDialog({ props, close }: DP<'syncChecklist'>) {
     if (!selected.length || busy) return;
     setBusy(true);
     try {
-      await call('sync.execute', { planId: plan.id, actionIds: selected.map((a) => a.id) });
+      const res: Record<string, ConflictResolution> = {};
+      for (const a of selected) if (a.action === 'conflict' && resolutions[a.id]) res[a.id] = resolutions[a.id];
+      await call('sync.execute', { planId: plan.id, actionIds: selected.map((a) => a.id), resolutions: res });
       setLayout({ dockOpen: true, dockTab: 'queue' });
       toast.info(t('sync.started'), t('sync.startedText', { n: selected.length }));
       close();
@@ -253,7 +306,22 @@ export function SyncChecklistDialog({ props, close }: DP<'syncChecklist'>) {
           );
         })}
         <div className="flex1" />
-        <Button size="sm" variant="ghost" onClick={() => setChecked(new Set([...checked, ...visible.map((a) => a.id)]))}>
+        {conflicts.length > 0 && !hidden.has('conflict') && (
+          <Select
+            value=""
+            onChange={(e) => e.target.value && resolveAll(e.target.value as BulkResolution)}
+            aria-label={t('sync.resolveAll')}
+            className="sc-bulk"
+            data-testid="sync-resolve-all"
+          >
+            <option value="">{t('sync.resolveAll')}</option>
+            <option value="newer">{t('sync.resolution.newer')}</option>
+            {RESOLUTIONS.map((r) => (
+              <option key={r} value={r}>{t(`sync.resolution.${r}` as TKey)}</option>
+            ))}
+          </Select>
+        )}
+        <Button size="sm" variant="ghost" onClick={() => setChecked(new Set([...checked, ...visible.filter((a) => a.action !== 'conflict').map((a) => a.id)]))}>
           {t('sync.selectAll')}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => setChecked(new Set([...checked].filter((id) => !visible.some((a) => a.id === id))))}>
@@ -291,12 +359,28 @@ export function SyncChecklistDialog({ props, close }: DP<'syncChecklist'>) {
                 </span>
                 <span className="num">{a.left && !a.isDir ? formatBytes(a.left.size) : a.left ? '' : '—'}</span>
                 <span className="muted">{a.left ? formatDate(a.left.modified) : ''}</span>
-                <span className="sc-dir">{a.action === 'copyLeftToRight' ? '→' : a.action === 'copyRightToLeft' ? '←' : a.action === 'conflict' ? '⇄' : '✕'}</span>
+                {a.action === 'conflict' && a.left && a.right && !isDirLike(a.left) && !isDirLike(a.right) ? (
+                  <span className="sc-dir" onClick={(e) => e.stopPropagation()}>
+                    <IconButton icon={GitCompare} size={13} title={t('sync.diff')} onClick={() => showDiff(a)} data-testid="sync-diff" />
+                  </span>
+                ) : (
+                  <span className="sc-dir">{a.action === 'copyLeftToRight' ? '→' : a.action === 'copyRightToLeft' ? '←' : a.action === 'conflict' ? '⇄' : '✕'}</span>
+                )}
                 <span className="num">{a.right && !a.isDir ? formatBytes(a.right.size) : a.right ? '' : '—'}</span>
                 <span className="muted">{a.right ? formatDate(a.right.modified) : ''}</span>
-                <span>
-                  <Badge tone={a.reason === 'obsolete' ? 'err' : a.reason === 'bothChanged' ? 'warn' : a.reason === 'new' ? 'ok' : 'muted'}>{t(`sync.reason.${a.reason}` as TKey)}</Badge>
-                </span>
+                {a.action === 'conflict' ? (
+                  <span className="sc-resolve" onClick={(e) => e.stopPropagation()} title={t(`sync.reason.${a.reason}` as TKey)}>
+                    <Select value={resolutions[a.id] ?? 'skip'} onChange={(e) => resolve(a, e.target.value as ConflictResolution)} aria-label={t('sync.resolution')} data-testid="sync-resolution">
+                      {RESOLUTIONS.map((r) => (
+                        <option key={r} value={r}>{t(`sync.resolution.${r}` as TKey)}</option>
+                      ))}
+                    </Select>
+                  </span>
+                ) : (
+                  <span>
+                    <Badge tone={a.reason === 'obsolete' ? 'err' : a.reason === 'bothChanged' ? 'warn' : a.reason === 'new' ? 'ok' : 'muted'}>{t(`sync.reason.${a.reason}` as TKey)}</Badge>
+                  </span>
+                )}
               </div>
             );
           })}

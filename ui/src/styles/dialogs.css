@@ -307,7 +307,11 @@
 .chip.sc-copyRightToLeft svg { color: var(--fi-image); }
 .chip.sc-deleteLeft svg, .chip.sc-deleteRight svg { color: var(--err); }
 .chip.sc-conflict svg { color: var(--warn); }
-.sc-row.unchecked > span:not(:first-child) { opacity: 0.45; }
+.sc-row.unchecked > span:not(:first-child):not(.sc-resolve):not(.sc-dir) { opacity: 0.45; }
+.sc-resolve { overflow: visible !important; }
+.sc-resolve .select select, .sc-bulk select { height: 22px; padding-top: 0; padding-bottom: 0; font-size: 12px; }
+.sc-bulk { width: 190px; }
+.sc-dir .icon-btn { margin: 0 auto; }
 .watch-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; }
 .watch-row { display: flex; align-items: center; gap: 10px; padding: 7px 6px 7px 10px; border-bottom: 1px solid var(--border-soft); }
 .watch-row:last-child { border-bottom: none; }
@@ -353,5 +357,9 @@
   .sync-arrow { justify-self: center; transform: rotate(90deg); }
   .sc-row { grid-template-columns: 26px 22px minmax(160px, 1fr) 70px 22px 70px; }
   .sc-row > span:nth-child(5), .sc-row > span:nth-child(8), .sc-row > span:nth-child(9) { display: none; }
+  /* conflicts: the resolution instead of sizes and times */
+  .sc-row.sc-conflict { grid-template-columns: 26px 22px minmax(100px, 1fr) 22px 124px; }
+  .sc-row.sc-conflict > span:nth-child(4), .sc-row.sc-conflict > span:nth-child(7) { display: none; }
+  .sc-row.sc-conflict > span.sc-resolve { display: block; }
   .env-row { grid-template-columns: 1fr auto 1fr auto; }
 }

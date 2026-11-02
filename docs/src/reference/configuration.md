@@ -25,6 +25,8 @@ containers (`/config`).
 | `vault.key` | Vault key when no master password is set (readable only by the user) |
 | `server.json` | Web login password (Argon2 hash) |
 | `instance.json` | Random instance ID used by LAN discovery |
+| `jobs.json` | Unfinished jobs and their progress, restored on the next start |
+| `sessions.json` | Open connections (saved site or settings without secrets), reconnected on the next start |
 | `tls/cert.pem`, `tls/key.pem` | Self-signed TLS certificate for the web server |
 
 The JSON files are written by the app; edit them only while Rust Commander is not running.
@@ -48,8 +50,8 @@ system's temporary folder.
 
 | Tab | Settings |
 |---|---|
-| General | Language, theme, hidden files, size format, what double-click / Enter does on a file (edit, open with the default application, copy to the other panel), confirmations before deleting and overwriting, whether the copy/move dialog is shown |
-| Transfer | Default transfer settings, number of parallel jobs |
+| General | Language, theme, hidden files, size format, what double-click / Enter does on a file (edit, open with the default application, copy to the other panel), confirmations before deleting and overwriting, moving deleted local files to the trash, whether the copy/move dialog is shown |
+| Transfer | Default transfer settings, number of parallel jobs, reconnecting the sessions and continuing the jobs of the last run |
 | Editor | Show problems, format when saving, line width for formatting, tab width, word wrap |
 | Terminal | Font family, font size, scrollback lines |
 | Discovery | Announce/discover on the LAN, instance name and ID, UDP port, announce interval |

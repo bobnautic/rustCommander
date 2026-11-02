@@ -12,11 +12,37 @@ stores, for example, have no permissions or symlinks).
 | F5 / F6 | [Copy / move](transfers.md) to the other panel |
 | Shift+F5 / Shift+F6 | Copy / move without the dialog |
 | F7 | New folder |
-| F8, Delete | Delete (recursive deletes run as a background job) |
+| F8, Delete | Delete (recursive deletes run as a background job); local files go to the trash |
+| Shift+F8, Shift+Delete | Delete permanently (local files skip the trash) |
+| Ctrl+Z | Undo the last rename or move |
 | Alt+Enter | Properties |
 | Ctrl+Shift+C | Copy the full path(s) to the clipboard |
 
 *Files* → **Create link…** creates a symbolic link.
+
+## Trash and undo
+
+In the desktop app, **F8** moves *local* files and folders to the system trash (the
+freedesktop trash on Linux, the Finder trash on macOS, the recycle bin on Windows), so a
+wrong delete can be restored from there. **Shift+Delete** deletes for good. The
+confirmation dialog says which of the two will happen. *Preferences* → *General* →
+**Move deleted local files to the trash** switches the trash off. Remote files and the
+files of a [headless server](../deployment/headless-server.md) are always deleted
+directly: servers have no trash.
+
+**Ctrl+Z** (*Files* → **Undo**) reverts the last **rename** or the last **move** within one
+session. A move is undoable once its job has completed; items that were changed or moved
+again in the meantime are left alone.
+
+## Faster operations on SSH servers
+
+On SFTP and SCP sessions, recursive operations run as a single shell command on the server
+instead of one request per file: deleting a folder (`rm -rf`), changing permissions or the
+owner recursively (`find … -exec chmod/chown`), folder sizes (`find | awk`) and the
+[search](#find-files) (`find` lists the tree, `grep -l` searches contents, nothing is
+downloaded). Rust Commander first checks that the shell sees the same files as SFTP (its
+home directory matches) and that GNU find is installed; otherwise, and whenever a command
+fails, it falls back to the normal way, which also reports each failing file.
 
 ## Properties
 

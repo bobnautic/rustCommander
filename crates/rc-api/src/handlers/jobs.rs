@@ -7,11 +7,12 @@ use rc_core::archive::{ArchiveFormat, ArchiveTask};
 use rc_core::jobs::{ConflictAction, ConflictDecision, Job, JobKind, JobSpec};
 use rc_core::path as vpath;
 use rc_core::search::SearchParams;
-use rc_core::sync::{SyncParams, SyncPlan, SyncTask};
+use rc_core::sync::{ConflictResolution, SyncActionKind, SyncParams, SyncPlan, SyncTask};
 use rc_core::transfer::{Endpoint, TransferOptions, TransferTask};
 use rc_core::watch::{WatchParams, WatchStatus};
 use rc_core::{Error, Protocol, Result};
 
+use crate::persist::JobDescriptor;
 use crate::state::{AppState, LOCAL_SESSION};
 
 /// Merge a partial options object over the saved defaults.
@@ -73,8 +74,17 @@ pub fn start_transfer(state: &AppState, p: TransferParams) -> Result<Job> {
         dst_dir: Some(p.dst_dir.clone()),
     };
     let speed = options.speed_limit;
+    let desc = JobDescriptor::Transfer {
+        src_session: p.src_session.clone(),
+        src_paths: p.src_paths.clone(),
+        dst_session: p.dst_session.clone(),
+        dst_dir: p.dst_dir.clone(),
+        options: options.clone(),
+    };
     let task = TransferTask { src, src_paths: p.src_paths, dst, dst_dir: p.dst_dir, options };
-    Ok(state.jobs.submit(JobKind::Transfer, spec, Arc::new(task), speed))
+    let job = state.jobs.submit(JobKind::Transfer, spec, Arc::new(task), speed);
+    state.persist.register(&job.id, desc);
+    Ok(job)
 }
 
 #[derive(Debug, Deserialize)]
@@ -186,6 +196,9 @@ pub struct SyncExecuteParams {
     pub plan_id: String,
     pub action_ids: Vec<String>,
     pub options: Option<serde_json::Value>,
+    /// How to resolve the selected conflicts (action id → resolution; missing = skip).
+    #[serde(default)]
+    pub resolutions: std::collections::HashMap<String, ConflictResolution>,
 }
 
 pub fn sync_execute(state: &AppState, p: SyncExecuteParams) -> Result<Job> {
@@ -195,7 +208,21 @@ pub fn sync_execute(state: &AppState, p: SyncExecuteParams) -> Result<Job> {
         .remove(&p.plan_id)
         .ok_or_else(|| Error::NotFound("synchronization plan (compare again)".into()))?;
     let wanted: std::collections::HashSet<&String> = p.action_ids.iter().collect();
-    let actions: Vec<_> = plan.actions.into_iter().filter(|a| wanted.contains(&a.id)).collect();
+    let actions: Vec<_> = plan
+        .actions
+        .into_iter()
+        .filter(|a| wanted.contains(&a.id))
+        .filter_map(|mut a| {
+            if a.action == SyncActionKind::Conflict {
+                let r = p.resolutions.get(&a.id).copied().filter(|r| *r != ConflictResolution::Skip)?;
+                a.resolution = Some(r);
+            }
+            Some(a)
+        })
+        .collect();
+    if actions.is_empty() {
+        return Err(Error::InvalidInput("nothing to synchronize (unresolved conflicts are skipped)".into()));
+    }
     let params = plan.params;
     let left = Endpoint::new(params.left_session.clone(), state.vfs(&params.left_session)?);
     let right = Endpoint::new(params.right_session.clone(), state.vfs(&params.right_session)?);
@@ -209,8 +236,11 @@ pub fn sync_execute(state: &AppState, p: SyncExecuteParams) -> Result<Job> {
         src_paths: vec![vpath::join(&params.left_path, "*")],
         dst_dir: Some(params.right_path.clone()),
     };
+    let desc = JobDescriptor::Sync { params: params.clone(), actions: actions.clone(), options: options.clone() };
     let task = SyncTask { left, right, params, actions, options };
-    Ok(state.jobs.submit(JobKind::Sync, spec, Arc::new(task), speed))
+    let job = state.jobs.submit(JobKind::Sync, spec, Arc::new(task), speed);
+    state.persist.register(&job.id, desc);
+    Ok(job)
 }
 
 // ------------------------------------------------------------------ keep up to date

@@ -133,14 +133,72 @@ async fn check_root(op: &Operator, what: &str) -> Result<()> {
     }
 }
 
+/// User metadata key with the original modification time of an uploaded file (the same
+/// key rclone uses: `x-amz-meta-mtime`, `x-ms-meta-mtime`, GCS `metadata.mtime`).
+const MTIME_KEY: &str = "mtime";
+
+/// Parse a stored modification time: Unix seconds (`1698765432` or `1698765432.123`, S3
+/// style) or RFC 3339 (Azure / GCS style).
+fn parse_mtime(v: &str) -> Option<i64> {
+    let v = v.trim();
+    if let Ok(secs) = v.parse::<f64>() {
+        return (secs.is_finite() && secs > 0.0).then_some(secs.floor() as i64);
+    }
+    chrono::DateTime::parse_from_rfc3339(v).ok().map(|d| d.timestamp())
+}
+
+fn format_mtime(protocol: Protocol, mtime: i64) -> String {
+    match protocol {
+        Protocol::S3 => mtime.to_string(),
+        _ => chrono::DateTime::from_timestamp(mtime, 0).map(|d| d.to_rfc3339()).unwrap_or_else(|| mtime.to_string()),
+    }
+}
+
 fn entry_from(name: &str, path: String, meta: &Metadata) -> FileEntry {
     let kind = if meta.is_dir() { FileKind::Dir } else { FileKind::File };
     let mut e = FileEntry::new(name, path, kind);
     if kind == FileKind::File {
         e.size = meta.content_length();
     }
-    e.modified = meta.last_modified().map(|t| t.into_inner().as_second());
+    // Listings carry the upload time only; `stat` also reads the stored original time.
+    let stored = meta.user_metadata().and_then(|m| m.get(MTIME_KEY)).and_then(parse_mtime);
+    e.modified = stored.or_else(|| meta.last_modified().map(|t| t.into_inner().as_second()));
     e
+}
+
+/// Lower-case hex of an MD5 given as hex or base64 (`Content-MD5`, GCS `md5Hash`).
+fn md5_hex(v: &str) -> Option<String> {
+    use base64::Engine;
+    let v = v.trim();
+    if v.len() == 32 && v.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Some(v.to_ascii_lowercase());
+    }
+    let raw = base64::engine::general_purpose::STANDARD.decode(v).ok()?;
+    (raw.len() == 16).then(|| hex::encode(raw))
+}
+
+/// The MD5 of an object as the service reports it, if it reports one: the rclone
+/// `md5chksum` metadata, `Content-MD5` (Azure, GCS `md5Hash`) or, on S3, an ETag that is
+/// a plain MD5 (single-part uploads; multipart ETags end in `-<parts>`).
+fn object_md5(
+    protocol: Protocol,
+    content_md5: Option<&str>,
+    etag: Option<&str>,
+    md5chksum: Option<&str>,
+) -> Option<String> {
+    if let Some(m) = md5chksum.and_then(md5_hex) {
+        return Some(m);
+    }
+    if let Some(m) = content_md5.filter(|v| !v.is_empty()).and_then(md5_hex) {
+        return Some(m);
+    }
+    if protocol == Protocol::S3 {
+        let tag = etag?.trim().trim_start_matches("W/").trim_matches('"');
+        if tag.len() == 32 && tag.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Some(tag.to_ascii_lowercase());
+        }
+    }
+    None
 }
 
 fn dir_key(rel: &str) -> String {
@@ -274,12 +332,27 @@ impl CloudVfs {
                 Backend::Single(op)
             }
         };
+        // S3, Azure and GCS keep an MD5 of most objects in their metadata.
+        let object_store = protocol != Protocol::Webdav;
+        let md5 = || if object_store { vec![ChecksumAlgo::Md5] } else { vec![] };
         let caps = match &backend {
             Backend::Single(op) => {
                 let c = op.info().capability();
-                Capabilities { server_copy: c.copy, resume_download: c.read, ..Default::default() }
+                Capabilities {
+                    server_copy: c.copy,
+                    resume_download: c.read,
+                    server_checksum: object_store,
+                    checksum_algos: md5(),
+                    ..Default::default()
+                }
             }
-            Backend::Buckets { .. } => Capabilities { server_copy: true, resume_download: true, ..Default::default() },
+            Backend::Buckets { .. } => Capabilities {
+                server_copy: true,
+                resume_download: true,
+                server_checksum: true,
+                checksum_algos: md5(),
+                ..Default::default()
+            },
         };
         let vfs =
             CloudVfs { protocol, backend, http, trust, dav, endpoint, caps, info, session_id: ctx.session_id.clone() };
@@ -747,13 +820,35 @@ impl Vfs for CloudVfs {
                 norm,
             )));
         }
-        let w = if cap.write_can_multi {
-            op.writer_with(&rel).chunk(PART_SIZE).concurrent(PART_CONCURRENCY).await
-        } else {
-            op.writer(&rel).await
+        // The original modification time travels as user metadata (objects cannot be
+        // touched later): synchronization compares the real times instead of upload times.
+        let meta: Vec<(String, String)> = match opts.modified {
+            Some(m) if cap.write_with_user_metadata => vec![(MTIME_KEY.to_string(), format_mtime(self.protocol, m))],
+            _ => vec![],
+        };
+        let mut w = op.writer_with(&rel);
+        if cap.write_can_multi {
+            w = w.chunk(PART_SIZE).concurrent(PART_CONCURRENCY);
         }
-        .map_err(|e| map_err(e, &norm))?;
+        if !meta.is_empty() {
+            w = w.user_metadata(meta);
+        }
+        let w = w.await.map_err(|e| map_err(e, &norm))?;
         Ok(Box::new(ObjectWriter::new(w, norm)))
+    }
+
+    async fn checksum(&self, path: &str, algo: ChecksumAlgo) -> Result<Option<String>> {
+        if algo != ChecksumAlgo::Md5 || self.is_webdav() {
+            return Ok(None);
+        }
+        let (norm, op, rel) = self.resolve_object(path).await?;
+        let meta = match op.stat(&rel).await {
+            Ok(m) if m.is_file() => m,
+            Ok(_) => return Err(Error::IsADirectory(norm)),
+            Err(e) => return Err(map_err(e, &norm)),
+        };
+        let chk = meta.user_metadata().and_then(|m| m.get("md5chksum"));
+        Ok(object_md5(self.protocol, meta.content_md5(), meta.etag(), chk))
     }
 
     async fn ping(&self) -> Result<()> {
@@ -766,5 +861,40 @@ impl Vfs for CloudVfs {
     async fn close(&self) -> Result<()> {
         tracing::debug!(session = %self.session_id, "cloud session closed");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stored_mtimes() {
+        assert_eq!(parse_mtime("1698765432"), Some(1698765432));
+        assert_eq!(parse_mtime("1698765432.987654321"), Some(1698765432));
+        assert_eq!(parse_mtime("2023-10-31T15:17:12Z"), Some(1698765432));
+        assert_eq!(parse_mtime("2023-10-31T17:17:12.5+02:00"), Some(1698765432));
+        assert_eq!(parse_mtime("yesterday"), None);
+        assert_eq!(parse_mtime(&format_mtime(Protocol::S3, 1698765432)), Some(1698765432));
+        assert_eq!(parse_mtime(&format_mtime(Protocol::Azure, 1698765432)), Some(1698765432));
+    }
+
+    #[test]
+    fn md5_from_metadata() {
+        let md5 = "d41d8cd98f00b204e9800998ecf8427e";
+        // S3: a single-part ETag is the MD5, a multipart one is not.
+        assert_eq!(
+            object_md5(Protocol::S3, None, Some("\"D41D8CD98F00B204E9800998ECF8427E\""), None).as_deref(),
+            Some(md5)
+        );
+        assert_eq!(object_md5(Protocol::S3, None, Some("\"3858f62230ac3c915f300c664312c11f-9\""), None), None);
+        // Azure / GCS: base64 Content-MD5; ETags are no checksums there.
+        assert_eq!(object_md5(Protocol::Azure, Some("1B2M2Y8AsgTpgAmY7PhCfg=="), None, None).as_deref(), Some(md5));
+        assert_eq!(object_md5(Protocol::Gcs, Some(""), Some(&format!("\"{md5}\"")), None), None);
+        // rclone's metadata wins.
+        assert_eq!(
+            object_md5(Protocol::S3, None, Some("\"x-2\""), Some("1B2M2Y8AsgTpgAmY7PhCfg==")).as_deref(),
+            Some(md5)
+        );
     }
 }

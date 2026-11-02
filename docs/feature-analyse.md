@@ -5,7 +5,8 @@ von `crates/`, `src-tauri/`, `ui/src/`, der Dokumentation unter `docs/` und der 
 Offene GitHub-Issues gibt es keine; alle sieben bisherigen Pull Requests sind gemergt.*
 
 Dieses Dokument ist nicht Teil des mdBook (nicht in `SUMMARY.md` verlinkt). Es ist eine
-Arbeitsgrundlage für die Planung der nächsten Versionen.
+Arbeitsgrundlage für die Planung der nächsten Versionen. Plan und Umsetzungsstand:
+[`implementierungsplan.md`](implementierungsplan.md).
 
 ---
 

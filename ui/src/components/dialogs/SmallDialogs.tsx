@@ -332,7 +332,7 @@ export function AboutDialog({ close }: DP<'about'>) {
 
 const SHORTCUT_DOCS: [string, string][] = [
   ['F2', 'ops.rename'], ['F3', 'ops.view'], ['F4', 'ops.edit'], ['Shift+F4', 'ops.newFile'], ['F5', 'ops.copy'], ['Shift+F5', 'help.copyNoDialog'],
-  ['F6', 'ops.move'], ['Shift+F6', 'help.moveNoDialog'], ['F7', 'ops.newFolder'], ['F8', 'common.delete'], ['Alt+Enter', 'ops.properties'],
+  ['F6', 'ops.move'], ['Shift+F6', 'help.moveNoDialog'], ['F7', 'ops.newFolder'], ['F8', 'common.delete'], ['Shift+Delete', 'ops.deletePermanently'], ['Ctrl+Z', 'undo.menu'], ['Alt+Enter', 'ops.properties'],
   ['Ctrl+R', 'common.refresh'], ['Ctrl+H', 'view.showHidden'], ['Ctrl+N', 'session.newSession'], ['Ctrl+T', 'terminal.open'], ['Ctrl+F', 'find.title'],
   ['Ctrl+L', 'help.focusPath'], ['Ctrl+D', 'bookmarks.add'], ['Ctrl+Shift+S', 'sync.title'], ['Ctrl+B', 'sidebar.toggle'], ['Ctrl+Shift+E', 'explorer.title'], ['Ctrl+J', 'dock.title'],
   ['Ctrl+Shift+C', 'ops.copyPath'], ['Ctrl+,', 'prefs.title'], ['Alt+←/→', 'help.backForward'],

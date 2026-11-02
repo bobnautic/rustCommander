@@ -100,6 +100,12 @@ pub struct Settings {
     pub double_click_action: String,
     pub size_format: String,
     pub max_concurrent_jobs: u32,
+    /// Move local files to the system trash when deleting (Shift+Delete deletes for good).
+    pub use_trash: bool,
+    /// Connect the sessions that were open when the application was closed.
+    pub restore_sessions: bool,
+    /// Continue interrupted transfers after a restart (otherwise they come back paused).
+    pub resume_jobs: bool,
     pub transfer: TransferOptions,
     pub discovery: DiscoverySettings,
     pub server: ServerSettings,
@@ -118,6 +124,9 @@ impl Default for Settings {
             double_click_action: "edit".into(),
             size_format: "auto".into(),
             max_concurrent_jobs: 3,
+            use_trash: true,
+            restore_sessions: true,
+            resume_jobs: true,
             transfer: TransferOptions::default(),
             discovery: DiscoverySettings::default(),
             server: ServerSettings::default(),

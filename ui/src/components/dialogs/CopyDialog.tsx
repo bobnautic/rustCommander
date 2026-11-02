@@ -15,6 +15,7 @@ import { toast } from '../../store/toasts';
 import { Button, Checkbox, Collapsible, Dialog, DialogButtons, Field, TextInput } from '../ui';
 import { summarizeOptions, TransferOptionsForm } from './common';
 import { SessionDot } from '../panel/Panel';
+import { recordMove } from '../../actions/undo';
 
 export default function CopyDialog({ props, close }: { props: CopyProps; close: () => void }) {
   const t = useT();
@@ -61,7 +62,8 @@ export default function CopyDialog({ props, close }: { props: CopyProps; close: 
     setBusy(true);
     const options: Partial<TransferOptions> = { ...opts, move, newName: single && newName.trim() && newName.trim() !== props.entries[0].name ? newName.trim() : null };
     try {
-      await call('transfer.start', { srcSession: props.srcSession, srcPaths: props.entries.map((e) => e.path), dstSession: props.dstSession, dstDir: P.normalize(dstDir), options });
+      const job = await call('transfer.start', { srcSession: props.srcSession, srcPaths: props.entries.map((e) => e.path), dstSession: props.dstSession, dstDir: P.normalize(dstDir), options });
+      if (move && props.srcSession === props.dstSession) recordMove(job.id, props.srcSession, props.entries, P.normalize(dstDir), options.newName);
       if (remember && settings) void saveSettings({ ...settings, transfer: { ...opts, move: false, newName: null } });
       if (skip) setSkipCopyDialog(true);
       save('copyOptsOpen', showOpts);

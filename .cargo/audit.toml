@@ -1,0 +1,10 @@
+# cargo audit configuration (the CI runs `cargo audit`).
+
+[advisories]
+ignore = [
+    # rsa: Marvin attack (timing side channel in RSA decryption). No fixed version exists;
+    # the crate comes in through russh for RSA SSH keys and host keys. Rust Commander only
+    # signs with RSA keys locally (no decryption oracle reachable from the network), so the
+    # attack does not apply. Remove when russh moves to a fixed rsa release.
+    "RUSTSEC-2023-0071",
+]

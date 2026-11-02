@@ -305,6 +305,7 @@ impl Vfs for RcmdVfs {
             set_modified: self.remote_caps.set_modified,
             server_checksum: true,
             disk_info: self.remote_caps.disk_info,
+            checksum_algos: ChecksumAlgo::ALL.to_vec(),
         }
     }
 

@@ -229,6 +229,7 @@ export default function PreferencesDialog({ props, close }: { props: DialogProps
             <div className="check-col">
               <Checkbox label={t('view.showHidden')} checked={draft.showHidden} onChange={(v) => set('showHidden', v)} />
               <Checkbox label={t('prefs.confirmDelete')} checked={draft.confirmDelete} onChange={(v) => set('confirmDelete', v)} />
+              {!web && <Checkbox label={t('prefs.useTrash')} checked={draft.useTrash} onChange={(v) => set('useTrash', v)} />}
               <Checkbox label={t('prefs.confirmOverwrite')} checked={draft.confirmOverwrite} onChange={(v) => set('confirmOverwrite', v)} />
               <Checkbox label={t('prefs.showCopyDialog')} checked={!skipCopy} onChange={(v) => setSkipCopy(!v)} />
             </div>
@@ -239,6 +240,11 @@ export default function PreferencesDialog({ props, close }: { props: DialogProps
             <Field label={t('prefs.maxJobs')} hint={t('prefs.maxJobsHint')}>
               <NumberInput value={draft.maxConcurrentJobs} min={1} max={16} onChange={(v) => set('maxConcurrentJobs', Math.max(1, Math.min(16, v)))} />
             </Field>
+            <div className="check-col">
+              <Checkbox label={t('prefs.restoreSessions')} checked={draft.restoreSessions} onChange={(v) => set('restoreSessions', v)} />
+              <Checkbox label={t('prefs.resumeJobs')} checked={draft.resumeJobs} onChange={(v) => set('resumeJobs', v)} />
+              <span className="muted small">{t('prefs.restartHint')}</span>
+            </div>
             <div className="section-title">{t('prefs.transferDefaults')}</div>
             <TransferOptionsForm value={draft.transfer} onChange={(v) => set('transfer', v)} />
           </div>

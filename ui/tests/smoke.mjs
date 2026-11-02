@@ -162,6 +162,33 @@ try {
     await cl.waitFor({ state: 'detached' });
   });
 
+  await step('synchronize both ways: conflicts are resolved in the checklist', async () => {
+    await page.locator('[data-testid="tb-sync"]').click();
+    const sd = dialog('Synchronize');
+    await sd.waitFor();
+    await sd.locator('button', { hasText: 'Both directions' }).click();
+    // by size only: files of the same name and another size are conflicts
+    await sd.locator('label', { hasText: 'Modification time' }).locator('input').uncheck();
+    await sd.locator('button[type=submit]').click();
+    const cl = dialog('Synchronization checklist');
+    await cl.waitFor({ timeout: 10000 });
+    const conflicts = cl.locator('[data-testid="sync-resolution"]');
+    const n = await conflicts.count();
+    assert(n >= 1, 'expected conflicts');
+    const total = cl.locator('[data-testid="sync-total"]');
+    const before = await total.innerText();
+    // unresolved conflicts are not executed; picking a resolution selects the row
+    await conflicts.first().selectOption('keepBoth');
+    for (let i = 0; i < 40 && (await total.innerText()) === before; i++) await page.waitForTimeout(50);
+    assert((await total.innerText()) !== before, 'resolution selects the conflict');
+    await cl.locator('[data-testid="sync-resolve-all"]').selectOption('newer');
+    assert((await conflicts.last().inputValue()) !== 'skip', 'resolve all');
+    await snap(page, 'sync-conflicts.png');
+    await cl.locator('button[type=submit]').click();
+    await cl.waitFor({ state: 'detached' });
+    await page.locator('[data-testid="job"][data-state="completed"]', { hasText: 'Synchronize' }).first().waitFor({ timeout: 15000 });
+  });
+
   await step('copy onto an existing file shows the conflict dialog', async () => {
     await row('left', 'index.html').click();
     await page.keyboard.press('F5');
@@ -339,7 +366,7 @@ try {
     await kp.keyboard.press('Tab');
   });
 
-  await step('F7 new folder, F2 inline rename, F8 delete', async () => {
+  await step('F7 new folder, F2 inline rename, Ctrl+Z undo, F8 to the trash, Shift+Delete', async () => {
     await kp.keyboard.press('F7');
     await kdialog('New folder').waitFor();
     await kp.keyboard.type('smoke-dir');
@@ -352,11 +379,31 @@ try {
     await kp.keyboard.type('smoke-renamed');
     await kp.keyboard.press('Enter');
     await krow('smoke-renamed').waitFor();
+    // one level of undo: the rename is reverted
     await kp.locator('[data-testid="table-left"]').focus();
-    await kp.keyboard.press('F8');
-    await kdialog('Delete').waitFor();
-    await kp.keyboard.press('Enter');
+    await kp.keyboard.press('Control+z');
+    await krow('smoke-dir').waitFor();
     await krow('smoke-renamed').waitFor({ state: 'detached', timeout: 5000 });
+    await krow('smoke-dir').click();
+    await until(async () => (await cursor()) === 'smoke-dir' || cursor(), 'cursor on smoke-dir');
+    // F8: local files of the desktop app go to the trash
+    await kp.keyboard.press('F8');
+    await kdialog('Move to trash').waitFor();
+    await kp.keyboard.press('Enter');
+    await krow('smoke-dir').waitFor({ state: 'detached', timeout: 5000 });
+    // Shift+Delete deletes for good
+    await kp.keyboard.press('F7');
+    await kdialog('New folder').waitFor();
+    await kp.keyboard.type('smoke-gone');
+    await kp.keyboard.press('Enter');
+    await krow('smoke-gone').waitFor();
+    await kp.locator('[data-testid="table-left"]').focus();
+    await until(async () => (await cursor()) === 'smoke-gone' || cursor(), 'new folder focused');
+    await kp.keyboard.press('Shift+Delete');
+    await kdialog('Delete').waitFor();
+    await kp.locator('.dlg button', { hasText: 'Delete permanently' }).waitFor();
+    await kp.keyboard.press('Enter');
+    await krow('smoke-gone').waitFor({ state: 'detached', timeout: 5000 });
   });
 
   await step('select by mask (+) and quick filter', async () => {

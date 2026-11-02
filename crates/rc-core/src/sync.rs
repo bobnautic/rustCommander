@@ -4,10 +4,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::jobs::{JobCtx, JobTask};
+use crate::jobs::{journal_key, JobCtx, JobTask};
 use crate::mask::FileMask;
 use crate::ops::{self, WalkOptions};
 use crate::path as vpath;
@@ -93,6 +94,18 @@ pub enum SyncReason {
     BothChanged,
 }
 
+/// How the user resolved a conflict (both sides changed).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ConflictResolution {
+    /// The left version replaces the right one.
+    LeftWins,
+    RightWins,
+    /// Both versions end up on both sides: the right one under a numbered name.
+    KeepBoth,
+    Skip,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncAction {
@@ -103,6 +116,9 @@ pub struct SyncAction {
     pub reason: SyncReason,
     pub left: Option<FileEntry>,
     pub right: Option<FileEntry>,
+    /// For conflicts: what to do (unset = skip).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<ConflictResolution>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,6 +173,34 @@ async fn scan(
     Ok(Side { entries })
 }
 
+/// Object stores list upload times; the original time of a file is in its metadata, which
+/// only `stat` returns. Fetch it for the files that exist on both sides (the ones whose
+/// times are compared).
+async fn read_stored_times(vfs: &dyn crate::Vfs, side: &mut Side, other: &Side) {
+    if !matches!(vfs.protocol(), Protocol::S3 | Protocol::Azure | Protocol::Gcs) {
+        return;
+    }
+    let common: Vec<(String, String)> = side
+        .entries
+        .iter()
+        .filter(|(rel, (_, is_dir))| !is_dir && other.entries.get(*rel).is_some_and(|(_, d)| !d))
+        .map(|(rel, (e, _))| (rel.clone(), e.path.clone()))
+        .collect();
+    let stats: Vec<(String, Option<i64>)> = stream::iter(common)
+        .map(|(rel, path)| async move {
+            let m = vfs.stat(&path).await.ok().and_then(|e| e.modified);
+            (rel, m)
+        })
+        .buffer_unordered(16)
+        .collect()
+        .await;
+    for (rel, m) in stats {
+        if let (Some(m), Some((e, _))) = (m, side.entries.get_mut(&rel)) {
+            e.modified = Some(m);
+        }
+    }
+}
+
 /// Compare two directory trees and produce the list of actions.
 pub async fn compare(
     left: &dyn crate::Vfs,
@@ -188,7 +232,11 @@ pub async fn compare(
             progress(SyncProgress { scanned_left: c.0, scanned_right: c.1, current: cur.to_string() });
         })
     );
-    let (l, r) = (l?, r?);
+    let (mut l, mut r) = (l?, r?);
+    if params.compare_time {
+        read_stored_times(left, &mut l, &r).await;
+        read_stored_times(right, &mut r, &l).await;
+    }
 
     let all: BTreeSet<&String> = l.entries.keys().chain(r.entries.keys()).collect();
     let mut actions = Vec::new();
@@ -215,6 +263,7 @@ pub async fn compare(
             reason,
             left: left.cloned(),
             right: right.cloned(),
+            resolution: None,
         };
         match (le, re) {
             (Some((le, ldir)), None) => {
@@ -242,6 +291,8 @@ pub async fn compare(
             }
             (Some((le, ldir)), Some((re, rdir))) if ldir != rdir => {
                 actions.push(mk(SyncActionKind::Conflict, SyncReason::BothChanged, false, Some(le), Some(re)));
+                // The directory's content belongs to the conflict, not to separate actions.
+                covered.push(rel.clone());
             }
             (Some((le, _)), Some((re, _))) => {
                 let size_diff = params.compare_size && le.size != re.size;
@@ -326,13 +377,22 @@ pub async fn compare(
         }
     }
 
-    // Checksums for files that look identical.
-    for (rel, le, re) in checksum_candidates {
-        let (a, b) = tokio::join!(
-            ops::checksum(left, &le.path, ChecksumAlgo::Sha256),
-            ops::checksum(right, &re.path, ChecksumAlgo::Sha256)
-        );
-        progress(SyncProgress { scanned_left: 0, scanned_right: 0, current: le.path.clone() });
+    // Checksums for files that look identical (a few at a time; the strongest algorithm
+    // both servers compute themselves, so object stores answer from their metadata).
+    let algo = ops::preferred_algo(left, right);
+    let progress = &progress;
+    type Checked = (String, FileEntry, FileEntry, Result<String>, Result<String>);
+    let mut checked: Vec<Checked> = stream::iter(checksum_candidates)
+        .map(|(rel, le, re)| async move {
+            let (a, b) = tokio::join!(ops::checksum(left, &le.path, algo), ops::checksum(right, &re.path, algo));
+            progress(SyncProgress { scanned_left: 0, scanned_right: 0, current: le.path.clone() });
+            (rel, le, re, a, b)
+        })
+        .buffer_unordered(4)
+        .collect()
+        .await;
+    checked.sort_by(|a, b| a.0.cmp(&b.0));
+    for (rel, le, re, a, b) in checked {
         if a? == b? {
             identical += 1;
             continue;
@@ -350,6 +410,7 @@ pub async fn compare(
             reason: SyncReason::ChecksumDiffers,
             left: Some(le),
             right: Some(re),
+            resolution: None,
         });
     }
 
@@ -372,6 +433,66 @@ pub struct SyncTask {
     pub options: TransferOptions,
 }
 
+impl SyncTask {
+    fn paths(&self, a: &SyncAction) -> (String, String) {
+        (vpath::join(&self.params.left_path, &a.rel_path), vpath::join(&self.params.right_path, &a.rel_path))
+    }
+
+    /// Keep both versions: the right one is renamed (`name (1).ext`), then the left version
+    /// is copied to the right and the renamed right version to the left.
+    async fn keep_both(&self, ctx: &JobCtx, a: &SyncAction, opts: &TransferOptions) -> Result<()> {
+        let key = journal_key("keep-both", &a.rel_path);
+        if ctx.journal_done(&key) {
+            return Ok(());
+        }
+        let (lp, rp) = self.paths(a);
+        let (ldir, rdir) = (vpath::parent(&lp), vpath::parent(&rp));
+        let name = vpath::file_name(&rp).to_string();
+        let new_name = match ctx.journal_was_active(&key) {
+            Some((n, _)) => n,
+            None => {
+                let mut n = 1;
+                loop {
+                    let cand = vpath::numbered_name(&name, n);
+                    let free_right = self.right.vfs.try_stat(&vpath::join(&rdir, &cand)).await?.is_none();
+                    if free_right && self.left.vfs.try_stat(&vpath::join(&ldir, &cand)).await?.is_none() {
+                        break cand;
+                    }
+                    n += 1;
+                    if n > 9999 {
+                        return Err(Error::other("cannot find a free file name"));
+                    }
+                }
+            }
+        };
+        ctx.journal_start(&key, &new_name, &new_name);
+        let renamed = vpath::join(&rdir, &new_name);
+        if self.right.vfs.try_stat(&renamed).await?.is_none() {
+            self.right.vfs.rename(&rp, &renamed).await?;
+        }
+        TransferTask {
+            src: self.left.clone(),
+            src_paths: vec![lp],
+            dst: self.right.clone(),
+            dst_dir: rdir,
+            options: opts.clone(),
+        }
+        .run(ctx)
+        .await?;
+        TransferTask {
+            src: self.right.clone(),
+            src_paths: vec![renamed],
+            dst: self.left.clone(),
+            dst_dir: ldir,
+            options: opts.clone(),
+        }
+        .run(ctx)
+        .await?;
+        ctx.journal_finish(&key);
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl JobTask for SyncTask {
     async fn run(&self, ctx: &JobCtx) -> Result<()> {
@@ -386,15 +507,51 @@ impl JobTask for SyncTask {
         let mut groups: BTreeMap<(bool, String), Vec<String>> = BTreeMap::new();
         let mut delete_left = Vec::new();
         let mut delete_right = Vec::new();
+        // A resolved conflict between a file and a directory replaces the losing entry.
+        let mut replace_left = Vec::new();
+        let mut replace_right = Vec::new();
+        let mut keep_both = Vec::new();
         for a in &self.actions {
-            let lp = vpath::join(&self.params.left_path, &a.rel_path);
-            let rp = vpath::join(&self.params.right_path, &a.rel_path);
+            let (lp, rp) = self.paths(a);
+            let differ = |x: &Option<FileEntry>, y: &Option<FileEntry>| match (x, y) {
+                (Some(x), Some(y)) => x.is_dir() != y.is_dir(),
+                _ => false,
+            };
             match a.action {
                 SyncActionKind::CopyLeftToRight => groups.entry((true, vpath::parent(&rp))).or_default().push(lp),
                 SyncActionKind::CopyRightToLeft => groups.entry((false, vpath::parent(&lp))).or_default().push(rp),
                 SyncActionKind::DeleteLeft => delete_left.push(lp),
                 SyncActionKind::DeleteRight => delete_right.push(rp),
-                SyncActionKind::Conflict => {}
+                SyncActionKind::Conflict => match a.resolution {
+                    Some(ConflictResolution::LeftWins) => {
+                        if differ(&a.left, &a.right) {
+                            replace_right.push(rp.clone());
+                        }
+                        groups.entry((true, vpath::parent(&rp))).or_default().push(lp);
+                    }
+                    Some(ConflictResolution::RightWins) => {
+                        if differ(&a.left, &a.right) {
+                            replace_left.push(lp.clone());
+                        }
+                        groups.entry((false, vpath::parent(&lp))).or_default().push(rp);
+                    }
+                    Some(ConflictResolution::KeepBoth) => keep_both.push(a),
+                    Some(ConflictResolution::Skip) | None => {}
+                },
+            }
+        }
+        if !replace_left.is_empty() {
+            DeleteTask::new(self.left.clone(), replace_left).run(ctx).await?;
+        }
+        if !replace_right.is_empty() {
+            DeleteTask::new(self.right.clone(), replace_right).run(ctx).await?;
+        }
+        for a in keep_both {
+            ctx.check().await?;
+            match self.keep_both(ctx, a, &opts).await {
+                Ok(()) => {}
+                Err(Error::Cancelled) => return Err(Error::Cancelled),
+                Err(e) => ctx.error(&a.rel_path, &e),
             }
         }
         for ((to_right, dst_dir), paths) in groups {
@@ -406,10 +563,10 @@ impl JobTask for SyncTask {
             t.run(ctx).await?;
         }
         if !delete_left.is_empty() {
-            DeleteTask { target: self.left.clone(), paths: delete_left }.run(ctx).await?;
+            DeleteTask::new(self.left.clone(), delete_left).run(ctx).await?;
         }
         if !delete_right.is_empty() {
-            DeleteTask { target: self.right.clone(), paths: delete_right }.run(ctx).await?;
+            DeleteTask::new(self.right.clone(), delete_right).run(ctx).await?;
         }
         Ok(())
     }
@@ -422,9 +579,19 @@ pub async fn synchronize_all(
     right: Endpoint,
     params: SyncParams,
     options: TransferOptions,
+    conflicts: Option<ConflictResolution>,
 ) -> Result<crate::jobs::Job> {
     let plan = compare(left.vfs.as_ref(), right.vfs.as_ref(), &params, |_| {}).await?;
-    let actions: Vec<SyncAction> = plan.actions.into_iter().filter(|a| a.action != SyncActionKind::Conflict).collect();
+    let actions: Vec<SyncAction> = plan
+        .actions
+        .into_iter()
+        .filter_map(|mut a| {
+            if a.action == SyncActionKind::Conflict {
+                a.resolution = Some(conflicts.filter(|c| *c != ConflictResolution::Skip)?);
+            }
+            Some(a)
+        })
+        .collect();
     let speed = options.speed_limit;
     let task = SyncTask { left: left.clone(), right: right.clone(), params: params.clone(), actions, options };
     let spec = crate::jobs::JobSpec {
@@ -496,10 +663,83 @@ mod tests {
 
         let q = JobQueue::new(1, Arc::new(|_| {}));
         let ep = Endpoint::new("local", vfs.clone());
-        let job =
-            synchronize_all(&q, ep.clone(), ep.clone(), params.clone(), TransferOptions::default()).await.unwrap();
+        let job = synchronize_all(&q, ep.clone(), ep.clone(), params.clone(), TransferOptions::default(), None)
+            .await
+            .unwrap();
         assert_eq!(job.state, JobState::Completed, "{:?}", job.errors);
         let after = compare(vfs.as_ref(), vfs.as_ref(), &params, |_| {}).await.unwrap();
         assert!(after.actions.is_empty(), "{:?}", after.actions);
+    }
+
+    #[tokio::test]
+    async fn resolve_conflicts() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = from_native(dir.path());
+        let vfs: Arc<dyn Vfs> = Arc::new(LocalVfs::new());
+        let w = |p: &str, c: &str| {
+            let vfs = vfs.clone();
+            let full = vpath::join(&base, p);
+            let c = c.to_string();
+            async move {
+                vfs.mkdir_all(&vpath::parent(&full)).await.unwrap();
+                write_all(vfs.as_ref(), &full, c.as_bytes()).await.unwrap();
+                vfs.set_modified(&full, 1000).await.unwrap();
+            }
+        };
+        // Same time, different sizes: conflicts in a two-way synchronization.
+        w("L/left.txt", "left wins").await;
+        w("R/left.txt", "r").await;
+        w("L/right.txt", "l").await;
+        w("R/right.txt", "right wins").await;
+        w("L/both.txt", "left version").await;
+        w("R/both.txt", "right").await;
+        w("L/skip.txt", "a").await;
+        w("R/skip.txt", "bb").await;
+        // A file on one side, a directory on the other.
+        w("L/kind", "now a file").await;
+        w("R/kind/inner.txt", "x").await;
+        let params = SyncParams {
+            left_path: vpath::join(&base, "L"),
+            right_path: vpath::join(&base, "R"),
+            right_session: "local".into(),
+            direction: SyncDirection::Both,
+            ..Default::default()
+        };
+        let plan = compare(vfs.as_ref(), vfs.as_ref(), &params, |_| {}).await.unwrap();
+        assert!(plan.actions.iter().all(|a| a.action == SyncActionKind::Conflict), "{:?}", plan.actions);
+        assert_eq!(plan.actions.len(), 5);
+        let actions: Vec<SyncAction> = plan
+            .actions
+            .into_iter()
+            .map(|mut a| {
+                a.resolution = Some(match a.rel_path.as_str() {
+                    "left.txt" | "kind" => ConflictResolution::LeftWins,
+                    "right.txt" => ConflictResolution::RightWins,
+                    "both.txt" => ConflictResolution::KeepBoth,
+                    _ => ConflictResolution::Skip,
+                });
+                a
+            })
+            .collect();
+        let ep = Endpoint::new("local", vfs.clone());
+        let task = SyncTask { left: ep.clone(), right: ep, params, actions, options: TransferOptions::default() };
+        let q = JobQueue::new(1, Arc::new(|_| {}));
+        let job = q.submit(crate::jobs::JobKind::Sync, Default::default(), Arc::new(task), 0);
+        let done = q.wait(&job.id).await.unwrap();
+        assert_eq!(done.state, JobState::Completed, "{:?}", done.errors);
+        let read = |p: &str| {
+            let full = vpath::join(&base, p);
+            let vfs = vfs.clone();
+            async move { String::from_utf8(crate::vfs::read_to_end(vfs.as_ref(), &full, 100).await.unwrap()).unwrap() }
+        };
+        assert_eq!(read("R/left.txt").await, "left wins");
+        assert_eq!(read("L/right.txt").await, "right wins");
+        assert_eq!(read("L/both.txt").await, "left version");
+        assert_eq!(read("R/both.txt").await, "left version");
+        assert_eq!(read("L/both (1).txt").await, "right");
+        assert_eq!(read("R/both (1).txt").await, "right");
+        assert_eq!(read("L/skip.txt").await, "a");
+        assert_eq!(read("R/skip.txt").await, "bb");
+        assert_eq!(read("R/kind").await, "now a file");
     }
 }

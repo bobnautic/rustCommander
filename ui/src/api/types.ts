@@ -46,6 +46,8 @@ export interface Capabilities {
   setModified: boolean;
   serverChecksum: boolean;
   diskInfo: boolean;
+  /** Checksums the server computes itself, best first (S3/Azure/GCS: MD5 from the object metadata). */
+  checksumAlgos?: ChecksumAlgo[];
 }
 
 export interface DiskInfo { total: number; free: number; available: number }
@@ -251,6 +253,10 @@ export interface Job {
 
 export type ConflictAction = 'overwrite' | 'skip' | 'resume' | 'rename' | 'newer' | 'cancel';
 
+/** How a synchronization conflict (both sides changed) is resolved. keepBoth: the right
+ * version is kept under a numbered name (`name (1).ext`) on both sides. */
+export type ConflictResolution = 'leftWins' | 'rightWins' | 'keepBoth' | 'skip';
+
 // ---------------------------------------------------------------- synchronization
 
 export type SyncDirection = 'leftToRight' | 'rightToLeft' | 'both';
@@ -289,6 +295,7 @@ export interface SyncAction {
   reason: SyncReason;
   left?: FileEntry | null;
   right?: FileEntry | null;
+  resolution?: ConflictResolution | null;
 }
 
 export interface SyncPlan {
@@ -419,6 +426,12 @@ export interface Settings {
   doubleClickAction: 'edit' | 'open' | 'transfer';
   sizeFormat: 'auto' | 'bytes';
   maxConcurrentJobs: number;
+  /** Desktop: deleting local files moves them to the system trash (Shift+Delete deletes for good). */
+  useTrash: boolean;
+  /** Connect the sessions that were open when the application was closed. */
+  restoreSessions: boolean;
+  /** Continue interrupted transfers after a restart (otherwise they come back paused). */
+  resumeJobs: boolean;
   transfer: TransferOptions;
   discovery: { enabled: boolean; port: number; instanceName: string; intervalSecs: number };
   server: { autoStart: boolean; bind: string; port: number; tls: boolean; allowTerminal: boolean };
@@ -511,8 +524,9 @@ export interface RpcMethods {
   'fs.mkdir': [{ session: string; path: string; parents?: boolean }, null];
   'fs.createFile': [{ session: string; path: string }, null];
   'fs.rename': [{ session: string; from: string; to: string }, null];
-  /** Runs in the background, returns the job. */
-  'fs.delete': [{ session: string; paths: string[] }, Job];
+  /** Runs in the background, returns the job. Local files of the desktop app go to the
+   * system trash (setting useTrash) unless `permanent`. */
+  'fs.delete': [{ session: string; paths: string[]; permanent?: boolean }, Job];
   'fs.setAttributes': [{
     session: string; paths: string[];
     permissions?: number | null;
@@ -545,7 +559,13 @@ export interface RpcMethods {
   'jobs.pause': [{ id: string }, null];
   'jobs.resume': [{ id: string }, null];
   'jobs.cancel': [{ id: string }, null];
-  'jobs.retry': [{ id: string }, Job];
+  /** `onlyMissing`: skip what the job finished, do only failed / not reached items again. */
+  'jobs.retry': [{ id: string; onlyMissing?: boolean }, Job];
+  /** Change the speed limit of a running job (bytes per second, 0 = unlimited). */
+  'jobs.setSpeedLimit': [{ id: string; bytesPerSec: number }, null];
+  'jobs.pauseAll': [Empty, null];
+  'jobs.resumeAll': [Empty, null];
+  'jobs.cancelAll': [Empty, null];
   'jobs.remove': [{ id: string }, null];
   'jobs.clearFinished': [Empty, null];
   'jobs.resolveConflict': [{ id: string; conflictId: string; action: ConflictAction; applyToAll: boolean; newName?: string | null }, null];
@@ -553,7 +573,8 @@ export interface RpcMethods {
   'sync.defaults': [Empty, SyncParams];
   /** Compares both trees (emits 'sync.progress'). */
   'sync.compare': [{ params: SyncParams }, SyncPlan];
-  'sync.execute': [{ planId: string; actionIds: string[]; options?: Partial<TransferOptions> }, Job];
+  /** Selected conflicts need a resolution (missing = skipped). */
+  'sync.execute': [{ planId: string; actionIds: string[]; options?: Partial<TransferOptions>; resolutions?: Record<string, ConflictResolution> }, Job];
   'sync.discard': [{ planId: string }, null];
 
   'watch.list': [Empty, Watch[]];

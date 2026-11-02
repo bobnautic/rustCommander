@@ -16,6 +16,7 @@ import {
 import { openTerminal } from '../store/terminals';
 import { attempt, toast } from '../store/toasts';
 import { upsertBg } from '../store/misc';
+import { recordMove, recordRename } from './undo';
 
 export const activeSide = (): Side => useApp.getState().activeSide;
 
@@ -95,7 +96,7 @@ export function copyEntries(side: Side, entries: FileEntry[], move: boolean, opt
   const dstSession = opts.dstSession ?? dst.session;
   const dstDir = opts.dstDir ?? dst.path;
   if (opts.skipDialog || load('skipCopyDialog', false)) {
-    void startTransfer(src.session, items.map((e) => e.path), dstSession, dstDir, { move });
+    void startTransfer(src.session, items.map((e) => e.path), dstSession, dstDir, { move }, items);
     return;
   }
   openDialog('copy', { srcSession: src.session, entries: items, dstSession, dstDir, move, srcSide: side });
@@ -107,8 +108,9 @@ export function copySelection(side: Side, move: boolean, skipDialog = false) {
   copyEntries(side, t, move, { skipDialog });
 }
 
-export async function startTransfer(srcSession: string, srcPaths: string[], dstSession: string, dstDir: string, options: Partial<TransferOptions>) {
+export async function startTransfer(srcSession: string, srcPaths: string[], dstSession: string, dstDir: string, options: Partial<TransferOptions>, entries?: FileEntry[]) {
   const job = await attempt(() => call('transfer.start', { srcSession, srcPaths, dstSession, dstDir, options }));
+  if (job && options.move && entries && srcSession === dstSession) recordMove(job.id, srcSession, entries, dstDir, options.newName);
   if (job) {
     for (const side of ['left', 'right'] as Side[]) {
       const p = getPanel(side);
@@ -127,19 +129,28 @@ export function setSkipCopyDialog(v: boolean) {
 
 // ---------------------------------------------------------------- delete
 
-export async function deleteSelection(side: Side) {
+/** Deleting in this session moves files to the system trash (local files in the desktop app). */
+export function usesTrash(session: string): boolean {
+  const st = useApp.getState();
+  return session === 'local' && st.info?.mode === 'desktop' && st.settings?.useTrash !== false;
+}
+
+/** F8 / Delete: to the trash where possible. `permanent` (Shift+Delete): delete for good. */
+export async function deleteSelection(side: Side, permanent = false) {
   const items = targets(side);
   if (!items.length) return toast.info(tr('ops.nothingSelected'));
   const p = getPanel(side);
   const settings = useApp.getState().settings;
+  const trash = !permanent && usesTrash(p.session);
   if (settings?.confirmDelete !== false) {
     const names = items.slice(0, 6).map((e) => `• ${e.name}${isDirLike(e) ? '/' : ''}`).join('\n') + (items.length > 6 ? `\n… ${tr('ops.andMore', { n: items.length - 6 })}` : '');
     const size = items.filter((e) => !isDirLike(e)).reduce((s, e) => s + e.size, 0);
+    const hint = trash ? `\n\n${tr('ops.trashHint')}` : usesTrash(p.session) ? `\n\n${tr('ops.permanentHint')}` : '';
     const { ok, checked } = await confirmWithCheckbox({
-      title: tr('ops.deleteTitle'),
-      message: tr('ops.deleteMessage', { n: items.length, session: sessionName(p.session) }),
-      detail: names + (size ? `\n\n${tr('ops.filesSize', { size: formatBytes(size) })}` : ''),
-      okLabel: tr('common.delete'),
+      title: trash ? tr('ops.trashTitle') : tr('ops.deleteTitle'),
+      message: trash ? tr('ops.trashMessage', { n: items.length }) : tr('ops.deleteMessage', { n: items.length, session: sessionName(p.session) }),
+      detail: names + (size ? `\n\n${tr('ops.filesSize', { size: formatBytes(size) })}` : '') + hint,
+      okLabel: trash ? tr('ops.trashTitle') : permanent && usesTrash(p.session) ? tr('ops.deletePermanently') : tr('common.delete'),
       danger: true,
       checkbox: { label: tr('ops.dontAskAgain'), checked: false },
     });
@@ -149,7 +160,7 @@ export async function deleteSelection(side: Side) {
       void patchSettings((s) => ({ ...s, confirmDelete: false }));
     }
   }
-  const job = await attempt(() => call('fs.delete', { session: p.session, paths: items.map((e) => e.path) }), tr('ops.deleteTitle'));
+  const job = await attempt(() => call('fs.delete', { session: p.session, paths: items.map((e) => e.path), permanent }), tr('ops.deleteTitle'));
   if (job) selectNone(side);
 }
 
@@ -193,6 +204,7 @@ export async function commitRename(side: Side, oldName: string, newName: string)
   const p = getPanel(side);
   try {
     await call('fs.rename', { session: p.session, from: P.join(p.path, oldName), to: P.join(p.path, name) });
+    recordRename(p.session, P.join(p.path, oldName), P.join(p.path, name));
     await navigate(side, p.session, p.path, { history: false, select: name });
     return true;
   } catch (e) {
