@@ -29,6 +29,10 @@ Die Lücken liegen weniger in der Breite als in drei Bereichen:
    Protokoll (rekursives chmod, rekursives Löschen, Ordnergröße, Inhaltssuche, Prüfsummen auf
    Objektspeichern), obwohl `exec` beziehungsweise Objekt-Metadaten eine Abkürzung böten.
 
+Außerdem meldet GitHub für den `main`-Branch sieben Dependabot-Schwachstellen in den
+Abhängigkeiten (2 kritisch, 2 hoch, 3 mittel); eine `dependabot.yml` und ein Audit-Schritt in
+der CI fehlen. Das sollte vor dem nächsten Release bereinigt werden (siehe Abschnitt 4).
+
 ### Die zehn wichtigsten Empfehlungen
 
 | # | Thema | Nutzen | Aufwand |
@@ -261,6 +265,7 @@ teilen.
 | GCS ist nicht gegen den echten Dienst getestet. | Fake-GCS-Server (`fsouza/fake-gcs-server`) in den Cloud-Testjob aufnehmen. | S |
 | Keine Durchsatz-Benchmarks. | Ein Criterion-Benchmark für `TransferTask` lokal→lokal und gegen den Test-SSH-Server, um Regressionen (Chunkgrößen, Pipeline) zu erkennen. | S |
 | Die i18n-Dateien sind deckungsgleich (1047 Schlüssel). | Ein kleiner Test, der das dauerhaft sicherstellt, verhindert Rückfälle. | S |
+| GitHub meldet sieben Dependabot-Schwachstellen auf `main` (2 kritisch, 2 hoch, 3 mittel): https://github.com/bobnautic/rustCommander/security/dependabot. Es gibt keine `.github/dependabot.yml`, und die CI führt weder `cargo audit` noch `npm audit` aus. | Betroffene Crates und npm-Pakete aktualisieren, Dependabot für Cargo und npm aktivieren, `cargo audit` (oder `cargo deny`) und `npm audit --omit=dev` als CI-Schritte aufnehmen. | S |
 
 ---
 
