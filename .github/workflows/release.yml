@@ -53,7 +53,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         if: github.event_name == 'pull_request'
       - name: Determine version
         id: version
@@ -93,7 +93,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.prepare.outputs.tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Note in a release created on GitHub
         run: |
           set -euo pipefail
@@ -145,7 +145,7 @@ jobs:
       # RPM versions cannot contain "-", so pre-releases come without an .rpm package
       RPM: ${{ needs.prepare.outputs.prerelease != 'true' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -230,7 +230,7 @@ jobs:
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -283,7 +283,7 @@ jobs:
       DRAFT: ${{ inputs.draft || false }}
       MAC_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -358,7 +358,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.prepare.outputs.tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Note in a release created on GitHub
         run: |
           set -euo pipefail
