@@ -4605,7 +4605,7 @@ version = "0.1.0"
 dependencies = [
  "argon2 0.5.3",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "directories",
  "futures",
@@ -4654,7 +4654,7 @@ version = "0.1.0"
 dependencies = [
  "argon2 0.5.3",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "chacha20poly1305",
  "chrono",
@@ -4725,7 +4725,7 @@ dependencies = [
  "async_zip",
  "axum",
  "axum-server",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "chrono",
  "futures",
