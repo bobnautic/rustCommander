@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use argon2::password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use async_trait::async_trait;
 use parking_lot::{Mutex, RwLock};
 use rand::RngCore;
@@ -95,9 +95,9 @@ impl ServerAuth {
         if password.len() < 4 {
             return Err(Error::InvalidInput("password must have at least 4 characters".into()));
         }
-        let salt = SaltString::generate(&mut OsRng);
+        // A random 16-byte salt is generated from the OS RNG.
         let hash = argon2::Argon2::default()
-            .hash_password(password.as_bytes(), &salt)
+            .hash_password(password.as_bytes())
             .map_err(|e| Error::other(e.to_string()))?
             .to_string();
         *self.hash.write() = Some(hash.clone());
@@ -119,8 +119,8 @@ impl ServerAuth {
             }
         }
         let Some(hash) = self.hash.read().clone() else { return false };
-        let Ok(parsed) = PasswordHash::new(&hash) else { return false };
-        argon2::Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok()
+        // Algorithm, version and cost parameters come from the stored PHC string.
+        argon2::Argon2::default().verify_password(password.as_bytes(), hash.as_str()).is_ok()
     }
 
     pub fn create_token(&self) -> String {
