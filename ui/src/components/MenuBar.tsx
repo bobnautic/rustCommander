@@ -4,6 +4,7 @@ import {
   GitCompareArrows, Hash, Info, Keyboard, Link2, ListChecks, Lock, LogOut, Menu as MenuIcon, Monitor, Moon, MoveRight, Network,
   PanelBottom, PanelLeft, Pencil, Plus, RefreshCw, Search, Settings, Share2, SquareTerminal, Sun, SunMoon, Trash2, Unplug, Upload,
   Command, Archive, ArrowDownUp, Radar, ClipboardCopy, FolderOpen, Route, Repeat, FolderTree, Fingerprint, GitCompare, FileSearch,
+  Undo2,
 } from 'lucide-react';
 import { call, mode, webLogout } from '../api/client';
 import { tr, useT, type TFn } from '../i18n';
@@ -18,6 +19,7 @@ import { toast } from '../store/toasts';
 import { commandsSubmenu } from './panel/panelMenu';
 import { MenuList, type MenuItem } from './Menu';
 import { cx, IconButton } from './ui';
+import { undoLabel, undoLast, useUndo } from '../actions/undo';
 
 function swapPanels() {
   const { left, right } = usePanels.getState();
@@ -74,7 +76,9 @@ export function buildMenus(t: TFn): { id: string; label: string; items: () => Me
           { label: t('ops.copy'), icon: Copy, shortcut: 'F5', onClick: () => ops.copySelection(side, false) },
           { label: t('ops.move'), icon: MoveRight, shortcut: 'F6', onClick: () => ops.copySelection(side, true) },
           { label: t('ops.rename'), icon: Pencil, shortcut: 'F2', onClick: () => ops.renameFocused(side) },
-          { label: t('common.delete'), icon: Trash2, shortcut: 'F8', danger: true, onClick: () => void ops.deleteSelection(side) },
+          { label: undoLabel() ?? t('undo.menu'), icon: Undo2, shortcut: k('Ctrl+Z'), disabled: !useUndo.getState().last, onClick: () => void undoLast(), testId: 'menu-undo' },
+          { label: ops.usesTrash(getPanel(side).session) ? t('ops.trashTitle') : t('common.delete'), icon: Trash2, shortcut: 'F8', danger: true, onClick: () => void ops.deleteSelection(side) },
+          { label: t('ops.deletePermanently'), icon: Trash2, shortcut: k('Shift+Delete'), danger: true, hidden: !ops.usesTrash(getPanel(side).session), onClick: () => void ops.deleteSelection(side, true) },
           { separator: true },
           { label: t('ops.newFolder'), icon: FolderPlus, shortcut: 'F7', onClick: () => void ops.makeDir(side) },
           { label: t('ops.newFile'), icon: FilePlus, shortcut: k('Shift+F4'), onClick: () => void ops.newFile(side) },

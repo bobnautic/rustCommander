@@ -34,6 +34,13 @@ synchronization works too.
   *changed on both sides*.
 - Untick anything you don't want; **Select all** / **Select none** help with long lists.
   The footer shows how many actions are selected and how much data will be transferred.
+- **Conflicts** are not synchronized until you decide: pick **Left version wins**,
+  **Right version wins**, **Keep both** or **Skip** in the row, or **Resolve all
+  conflicts…** (including *Newer version wins*) for every conflict at once. Ticking a
+  conflict picks the newer version. **Keep both** renames the right version to
+  `name (1).ext` and copies each version to the other side, so both sides end up with both
+  files. When a file and a folder of the same name collide, the winner replaces the other
+  entry. The compare button in the row shows the differences of two text files.
 - **Synchronize** queues the selected actions as one job in the [queue](transfers.md#the-queue).
 
 If both sides are already in sync, the dialog says so and nothing is queued.
@@ -55,5 +62,9 @@ The same engine is available in [scripts](../reference/scripting.md):
 
 ```text
 synchronize remote ./dist /var/www/html -delete -criteria=checksum
+synchronize both ./notes /home/me/notes -conflict=both
 keepuptodate ./site /var/www/html -delete
 ```
+
+`-conflict=skip|local|remote|both|fail` decides what happens to conflicts (default:
+`skip`; `fail` stops the script).

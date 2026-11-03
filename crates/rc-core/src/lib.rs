@@ -18,6 +18,7 @@ pub mod path;
 pub mod prompt;
 pub mod protocols;
 pub mod reconnect;
+pub mod remote;
 pub mod search;
 pub mod site;
 pub mod store;

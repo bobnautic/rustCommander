@@ -6,17 +6,19 @@ import { tr } from '../i18n';
 import { applySettings, removeSession, showDock, upsertSession, useApp, reloadBookmarks, reloadCommands } from '../store/app';
 import { isFinished, removeJob, setJobs, upsertJob, useJobs } from '../store/jobs';
 import { addPrompt, appendLog, onSearchDone, onSearchResult, removePrompt, setBg, setLog, upsertBg, useNearby, usePrompts } from '../store/misc';
-import { initPanels, onSessionClosed, refreshWhere, usePanels } from '../store/panels';
+import { initPanels, onSessionClosed, onSessionRestored, refreshWhere, usePanels } from '../store/panels';
 import { explorerFsChanged, explorerSessionClosed } from '../store/explorer';
 import { adoptTerminals, onTerminalData, onTerminalExit } from '../store/terminals';
 import { toast } from '../store/toasts';
 import { openDialog } from '../store/dialogs';
+import { onJobForUndo } from './undo';
 
 let subscribed = false;
 
 function onJobUpdated(j: Job) {
   const prev = useJobs.getState().jobs[j.id];
   upsertJob(j);
+  onJobForUndo(j);
   if (prev && !isFinished(prev.state) && isFinished(j.state)) {
     if (j.state === 'completed') {
       toast.success(tr('queue.jobDone'), j.title);
@@ -46,7 +48,10 @@ function scheduleRefresh(session: string, path: string) {
 export function subscribeEvents() {
   if (subscribed) return;
   subscribed = true;
-  on('session.opened', (s) => upsertSession(s));
+  on('session.opened', (s) => {
+    upsertSession(s);
+    onSessionRestored(s);
+  });
   on('session.closed', ({ id, reason }) => {
     const s = useApp.getState().sessions.find((x) => x.id === id);
     removeSession(id);

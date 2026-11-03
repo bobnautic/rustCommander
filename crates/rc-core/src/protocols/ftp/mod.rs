@@ -163,6 +163,17 @@ impl Vfs for FtpVfs {
             resume_download: info.feat.rest_stream,
             set_modified: info.feat.mfmt || !matches!(mtime, mtime_cmd::UNKNOWN | mtime_cmd::NONE),
             server_checksum: !info.feat.hash.is_empty() || !info.feat.xhash.is_empty(),
+            checksum_algos: ChecksumAlgo::ALL
+                .into_iter()
+                .filter(|a| {
+                    let (hash, xcmd) = match a {
+                        ChecksumAlgo::Md5 => ("MD5", "XMD5"),
+                        ChecksumAlgo::Sha1 => ("SHA-1", "XSHA1"),
+                        ChecksumAlgo::Sha256 => ("SHA-256", "XSHA256"),
+                    };
+                    info.feat.hash.iter().any(|h| h == hash) || info.feat.xhash.iter().any(|x| x == xcmd)
+                })
+                .collect(),
             ..Default::default()
         }
     }

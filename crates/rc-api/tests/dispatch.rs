@@ -29,7 +29,8 @@ async fn wait_job(st: &Arc<AppState>, id: &str) -> Value {
         }
         tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     }
-    panic!("job {id} did not finish");
+    let jobs = call(st, "jobs.list", Value::Null).await;
+    panic!("job {id} did not finish: {jobs}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -134,7 +135,11 @@ async fn contract_shapes() {
     assert!(dir.path().join("mirror/a/y.txt").exists());
 
     // Delete job, bookmarks, custom commands, archive.
-    let job = call(&st, "fs.delete", json!({ "session": "local", "paths": [format!("{base}/mirror")] })).await;
+    // (Desktop deletes of local files go to the trash unless `permanent`.)
+    let job =
+        call(&st, "fs.delete", json!({ "session": "local", "paths": [format!("{base}/mirror")], "permanent": true }))
+            .await;
+    assert_eq!(job["title"], "Delete: mirror");
     assert_eq!(wait_job(&st, job["id"].as_str().unwrap()).await["state"], "completed");
     let b = call(
         &st,
@@ -345,4 +350,64 @@ async fn editor_settings_and_formatters() {
         assert_eq!(r["content"], "fn f() {}\n");
         assert_eq!(r["formatter"], "rustfmt");
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn interrupted_jobs_and_sessions_survive_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("cfg");
+    let base = rc_core::local::from_native(dir.path());
+    std::fs::create_dir_all(dir.path().join("src/sub")).unwrap();
+    std::fs::create_dir_all(dir.path().join("dst")).unwrap();
+    std::fs::write(dir.path().join("src/a.txt"), "aaa").unwrap();
+    std::fs::write(dir.path().join("src/sub/b.txt"), "bbbb").unwrap();
+    // A saved session of an earlier run that cannot connect now (nothing listens there).
+    std::fs::create_dir_all(&cfg).unwrap();
+    std::fs::write(
+        cfg.join("sessions.json"),
+        r#"[{"id":"gone","name":"Old server","site":{"protocol":"rcmd","host":"127.0.0.1","port":9,"name":"Old server"},"protocol":"rcmd","connectedAt":1}]"#,
+    )
+    .unwrap();
+
+    let job_id = {
+        let st = AppState::new(InitOptions { mode: AppMode::Web, config_dir: Some(cfg.clone()) }).await.unwrap();
+        let mut settings = call(&st, "settings.get", Value::Null).await;
+        settings["restoreSessions"] = json!(false);
+        settings["discovery"]["enabled"] = json!(false);
+        call(&st, "settings.set", json!({ "settings": settings })).await;
+        call(&st, "jobs.pauseAll", Value::Null).await;
+        let job = call(
+            &st,
+            "transfer.start",
+            json!({ "srcSession": "local", "srcPaths": [format!("{base}/src")], "dstSession": "local", "dstDir": format!("{base}/dst"), "options": { "overwrite": "overwrite" } }),
+        )
+        .await;
+        let id = job["id"].as_str().unwrap().to_string();
+        call(&st, "jobs.pause", json!({ "id": id })).await;
+        st.shutdown().await;
+        id
+    };
+    assert!(!dir.path().join("dst/src").exists());
+    let saved: Value = serde_json::from_slice(&std::fs::read(cfg.join("jobs.json")).unwrap()).unwrap();
+    assert_eq!(saved[0]["id"], job_id.as_str());
+    assert_eq!(saved[0]["task"]["type"], "transfer");
+
+    // The next start brings the job back (paused, as it was) with the same id.
+    let st = AppState::new(InitOptions { mode: AppMode::Web, config_dir: Some(cfg.clone()) }).await.unwrap();
+    st.start_background().await;
+    let jobs = call(&st, "jobs.list", Value::Null).await;
+    let j = jobs.as_array().unwrap().iter().find(|j| j["id"] == job_id.as_str()).cloned().expect("restored job");
+    assert_eq!(j["state"], "paused");
+    call(&st, "jobs.resume", json!({ "id": job_id })).await;
+    let done = wait_job(&st, &job_id).await;
+    assert_eq!(done["state"], "completed", "{done}");
+    assert_eq!(std::fs::read_to_string(dir.path().join("dst/src/sub/b.txt")).unwrap(), "bbbb");
+    // Finished jobs are not saved any more; the closed session record is still there
+    // (restoring sessions was switched off).
+    tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+    let saved: Value = serde_json::from_slice(&std::fs::read(cfg.join("jobs.json")).unwrap()).unwrap();
+    assert_eq!(saved, json!([]));
+    let sessions: Value = serde_json::from_slice(&std::fs::read(cfg.join("sessions.json")).unwrap()).unwrap();
+    assert_eq!(sessions[0]["id"], "gone");
+    st.shutdown().await;
 }

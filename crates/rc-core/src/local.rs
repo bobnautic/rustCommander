@@ -216,6 +216,7 @@ impl Vfs for LocalVfs {
             set_modified: true,
             server_checksum: false,
             disk_info: true,
+            checksum_algos: vec![],
         }
     }
 

@@ -1,18 +1,18 @@
 import { useMemo, useState } from 'react';
 import {
   ArrowDownToLine, ArrowUpFromLine, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleX, ExternalLink, Inbox, Pause, Play, Radar,
-  RotateCcw, Square, Trash2, ArrowLeftRight, Eraser, TriangleAlert, Clock, FolderSync, X,
+  RotateCcw, Square, Trash2, ArrowLeftRight, Eraser, TriangleAlert, Clock, FolderSync, X, Gauge, ListRestart,
 } from 'lucide-react';
 import type { Job } from '../../api/types';
 import { call } from '../../api/client';
-import { useT, type TKey } from '../../i18n';
+import { tr, useT, type TKey } from '../../i18n';
 import { formatBytes, formatDuration, formatNumber, formatSpeed, percent } from '../../lib/format';
 import * as P from '../../lib/paths';
 import { useApp } from '../../store/app';
 import { clearFinishedClientJobs, isFinished, removeClientJob, reopenConflict, useJobs, type ClientJob } from '../../store/jobs';
 import { removeBg, useBg } from '../../store/misc';
 import { attempt } from '../../store/toasts';
-import { openDialog } from '../../store/dialogs';
+import { inputDialog, openDialog } from '../../store/dialogs';
 import { Badge, Button, EmptyState, IconButton, ProgressBar, cx } from '../ui';
 
 type AnyJob = (Job & { client?: false }) | (ClientJob & { client: true; kind: 'upload' | 'download' });
@@ -32,6 +32,19 @@ function JobIcon({ job }: { job: AnyJob }) {
   if (job.kind === 'upload') return <ArrowUpFromLine size={16} className="accent" />;
   if (job.kind === 'download') return <ArrowDownToLine size={16} className="accent" />;
   return <ArrowLeftRight size={16} className="accent" />;
+}
+
+/** Ask for a new speed limit (KiB/s, 0 = unlimited) of a running job. */
+async function changeSpeedLimit(id: string) {
+  const v = await inputDialog({
+    title: tr('queue.speedLimit'),
+    label: tr('queue.speedLimitLabel'),
+    value: '0',
+    validate: (x) => (/^\d+$/.test(x.trim()) ? null : tr('queue.speedLimitInvalid')),
+    okLabel: tr('common.apply'),
+  });
+  if (v === null || v === undefined) return;
+  await attempt(() => call('jobs.setSpeedLimit', { id, bytesPerSec: Number(v.trim()) * 1024 }));
 }
 
 function JobRow({ job }: { job: AnyJob }) {
@@ -101,9 +114,11 @@ function JobRow({ job }: { job: AnyJob }) {
                 {t('queue.answer')}
               </Button>
             )}
+            {(job.state === 'running' || job.state === 'queued') && job.kind !== 'delete' && <IconButton icon={Gauge} title={t('queue.speedLimit')} onClick={() => void changeSpeedLimit(id)} />}
             {(job.state === 'running' || job.state === 'queued') && <IconButton icon={Pause} title={t('queue.pause')} onClick={act('jobs.pause')} />}
             {job.state === 'paused' && <IconButton icon={Play} title={t('queue.resume')} onClick={act('jobs.resume')} />}
             {!finished && <IconButton icon={Square} title={t('queue.cancel')} onClick={act('jobs.cancel')} data-testid="job-cancel" />}
+            {(job.state === 'failed' || job.state === 'cancelled') && job.filesDone > 0 && <IconButton icon={ListRestart} title={t('queue.retryMissing')} onClick={() => void attempt(() => call('jobs.retry', { id, onlyMissing: true }))} data-testid="job-retry-missing" />}
             {(job.state === 'failed' || job.state === 'cancelled') && <IconButton icon={RotateCcw} title={t('queue.retry')} onClick={() => void attempt(() => call('jobs.retry', { id }))} />}
             {finished && <IconButton icon={X} title={t('queue.remove')} onClick={act('jobs.remove')} />}
           </>
@@ -156,12 +171,18 @@ export function QueueView() {
     return all.sort((a, b) => rank(a) - rank(b) || b.createdAt - a.createdAt);
   }, [jobs, client]);
   const finished = list.filter((j) => isFinished(j.state)).length;
+  const server = list.filter((j) => !j.client && !isFinished(j.state));
+  const anyRunning = server.some((j) => j.state === 'running' || j.state === 'queued' || j.state === 'waiting');
+  const anyPaused = server.some((j) => j.state === 'paused');
 
   return (
     <div className="queue">
       <div className="dock-toolbar">
         <span className="muted">{t('queue.count', { active: list.length - finished, finished })}</span>
         <div className="flex1" />
+        {anyRunning && <Button size="sm" variant="ghost" icon={Pause} onClick={() => void attempt(() => call('jobs.pauseAll'))}>{t('queue.pauseAll')}</Button>}
+        {anyPaused && <Button size="sm" variant="ghost" icon={Play} onClick={() => void attempt(() => call('jobs.resumeAll'))} data-testid="queue-resume-all">{t('queue.resumeAll')}</Button>}
+        {server.length > 1 && <Button size="sm" variant="ghost" icon={Square} onClick={() => void attempt(() => call('jobs.cancelAll'))}>{t('queue.cancelAll')}</Button>}
         <Button size="sm" variant="ghost" icon={Eraser} disabled={!finished} onClick={() => {
           clearFinishedClientJobs();
           void attempt(() => call('jobs.clearFinished'));

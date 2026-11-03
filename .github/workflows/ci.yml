@@ -14,7 +14,7 @@ env:
 
 jobs:
   ui:
-    name: UI (typecheck + build)
+    name: UI (typecheck, build, unit + smoke tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -29,10 +29,42 @@ jobs:
         working-directory: ui
       - run: npm run test:unit
         working-directory: ui
+      # Smoke test of the whole UI against the built-in mock backend (Playwright, Chromium).
+      - name: Playwright and Chromium
+        run: |
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+        working-directory: ui
+      - run: node tests/smoke.mjs
+        working-directory: ui
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-smoke-screenshots
+          path: ui/tests/screenshots
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: ui-dist
           path: ui/dist
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      # Known vulnerabilities in the shipped npm packages (dev tools are not shipped).
+      - run: npm audit --omit=dev --audit-level=moderate
+        working-directory: ui
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # RustSec advisories for Cargo.lock; accepted exceptions are in .cargo/audit.toml.
+      - run: cargo audit
 
   rust:
     name: Rust (${{ matrix.os }})

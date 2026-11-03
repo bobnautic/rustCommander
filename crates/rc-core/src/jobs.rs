@@ -1,6 +1,7 @@
 //! Background job queue (transfers, deletions, synchronizations) with pause, cancel,
 //! retry, progress reporting and interactive overwrite questions.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -100,8 +101,31 @@ pub struct Job {
     pub finished_at: Option<i64>,
 }
 
+/// Which items of a job are finished and which were being written. The application
+/// persists it, so that a job interrupted by a restart (or retried with "only what is
+/// missing") continues where it stopped instead of starting over.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct JobJournal {
+    /// Keys ([`journal_key`]) of finished items.
+    pub done: BTreeSet<String>,
+    /// Items in progress: key → (path being written, final target path).
+    pub active: BTreeMap<String, (String, String)>,
+}
+
+/// Finished items a journal records at most. Beyond that, a restored job handles the
+/// remaining files with its overwrite mode again (correct, only slower); it keeps the
+/// journal (memory, `jobs.json`) small for jobs with millions of files.
+pub const JOURNAL_LIMIT: usize = 50_000;
+
+/// Journal key of `path` in `session`.
+pub fn journal_key(session: &str, path: &str) -> String {
+    format!("{session}\u{1}{path}")
+}
+
 /// Static description of a job when it is created.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct JobSpec {
     pub title: String,
     pub src_session: Option<String>,
@@ -190,6 +214,9 @@ struct JobInner {
     speed_state: Mutex<(Instant, u64, f64)>,
     conflict_lock: tokio::sync::Mutex<()>,
     queue: std::sync::Weak<QueueInner>,
+    journal: Mutex<JobJournal>,
+    /// The journal the job was restored with (read-only during the run).
+    previous: Option<JobJournal>,
 }
 
 impl JobCtx {
@@ -269,6 +296,52 @@ impl JobCtx {
 
     pub fn has_errors(&self) -> bool {
         !self.inner.progress.lock().snapshot.errors.is_empty()
+    }
+
+    /// The job continues an earlier run (after a restart or a retry of what is missing).
+    pub fn is_restored(&self) -> bool {
+        self.inner.previous.is_some()
+    }
+
+    /// The item was finished by the earlier run.
+    pub fn journal_done(&self, key: &str) -> bool {
+        self.inner.previous.as_ref().is_some_and(|j| j.done.contains(key))
+            || self.inner.journal.lock().done.contains(key)
+    }
+
+    /// The item was being written when the earlier run stopped: the partially written
+    /// path and the final target path.
+    pub fn journal_was_active(&self, key: &str) -> Option<(String, String)> {
+        self.inner.previous.as_ref().and_then(|j| j.active.get(key).cloned())
+    }
+
+    /// The item is now being written to `write_path` (renamed to `target` when complete).
+    pub fn journal_start(&self, key: &str, write_path: &str, target: &str) {
+        self.inner.journal.lock().active.insert(key.to_string(), (write_path.to_string(), target.to_string()));
+        self.touch_journal();
+    }
+
+    pub fn journal_finish(&self, key: &str) {
+        {
+            let mut j = self.inner.journal.lock();
+            j.active.remove(key);
+            if j.done.len() < JOURNAL_LIMIT {
+                j.done.insert(key.to_string());
+            }
+        }
+        self.touch_journal();
+    }
+
+    /// Forget an item that was started but not finished (the partial target was removed).
+    pub fn journal_abort(&self, key: &str) {
+        self.inner.journal.lock().active.remove(key);
+        self.touch_journal();
+    }
+
+    fn touch_journal(&self) {
+        if let Some(q) = self.inner.queue.upgrade() {
+            q.generation.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     fn update(&self, f: impl FnOnce(&mut Job)) {
@@ -367,6 +440,17 @@ impl JobInner {
     }
 }
 
+/// Options of [`JobQueue::submit_with`].
+#[derive(Debug, Clone, Default)]
+pub struct SubmitOptions {
+    pub id: Option<String>,
+    pub created_at: Option<i64>,
+    /// Start paused (the job waits for "resume").
+    pub paused: bool,
+    /// Journal of an earlier run of the job.
+    pub journal: Option<JobJournal>,
+}
+
 pub type JobListener = Arc<dyn Fn(JobEvent) + Send + Sync>;
 
 #[derive(Debug, Clone)]
@@ -377,6 +461,8 @@ pub enum JobEvent {
 
 struct QueueInner {
     jobs: Mutex<Vec<Arc<JobInner>>>,
+    /// Bumped on every state or journal change (persistence checks it).
+    generation: AtomicU64,
     semaphore: Arc<Semaphore>,
     max_concurrent: AtomicUsize,
     listener: JobListener,
@@ -385,6 +471,7 @@ struct QueueInner {
 impl QueueInner {
     fn emit(&self, job: &JobInner) {
         job.dirty.store(false, Ordering::Relaxed);
+        self.generation.fetch_add(1, Ordering::Relaxed);
         if job.removed.load(Ordering::SeqCst) {
             return;
         }
@@ -403,6 +490,7 @@ impl JobQueue {
         let max = max_concurrent.clamp(1, 32);
         let inner = Arc::new(QueueInner {
             jobs: Mutex::new(Vec::new()),
+            generation: AtomicU64::new(0),
             semaphore: Arc::new(Semaphore::new(max)),
             max_concurrent: AtomicUsize::new(max),
             listener,
@@ -451,7 +539,20 @@ impl JobQueue {
 
     /// Enqueue a job; it starts as soon as a slot is free.
     pub fn submit(&self, kind: JobKind, spec: JobSpec, task: Arc<dyn JobTask>, speed_limit: u64) -> Job {
-        let id = uuid::Uuid::new_v4().to_string();
+        self.submit_with(kind, spec, task, speed_limit, SubmitOptions::default())
+    }
+
+    /// Enqueue a job with an id, a journal of an earlier run and an initial pause state
+    /// (jobs restored after a restart).
+    pub fn submit_with(
+        &self,
+        kind: JobKind,
+        spec: JobSpec,
+        task: Arc<dyn JobTask>,
+        speed_limit: u64,
+        opts: SubmitOptions,
+    ) -> Job {
+        let id = opts.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let snapshot = Job {
             id: id.clone(),
             kind,
@@ -471,11 +572,11 @@ impl JobQueue {
             eta: None,
             errors: vec![],
             conflict: None,
-            created_at: chrono::Utc::now().timestamp(),
+            created_at: opts.created_at.unwrap_or_else(|| chrono::Utc::now().timestamp()),
             started_at: None,
             finished_at: None,
         };
-        let (paused, _) = watch::channel(false);
+        let (paused, _) = watch::channel(opts.paused);
         let inner = Arc::new(JobInner {
             id,
             kind,
@@ -491,7 +592,12 @@ impl JobQueue {
             speed_state: Mutex::new((Instant::now(), 0, 0.0)),
             conflict_lock: tokio::sync::Mutex::new(()),
             queue: Arc::downgrade(&self.inner),
+            journal: Mutex::new(opts.journal.clone().unwrap_or_default()),
+            previous: opts.journal,
         });
+        if opts.paused {
+            inner.progress.lock().snapshot.state = JobState::Paused;
+        }
         self.inner.jobs.lock().push(inner.clone());
         self.inner.emit(&inner);
         self.spawn(inner.clone());
@@ -502,6 +608,14 @@ impl JobQueue {
         let q = self.inner.clone();
         tokio::spawn(async move {
             let token = job.cancel.lock().clone();
+            // A job paused before it started does not take a slot.
+            let mut paused_rx = job.paused.subscribe();
+            while *paused_rx.borrow_and_update() {
+                tokio::select! {
+                    r = paused_rx.changed() => { if r.is_err() { break; } }
+                    _ = token.cancelled() => break,
+                }
+            }
             let permit = tokio::select! {
                 p = q.semaphore.clone().acquire_owned() => p.ok(),
                 _ = token.cancelled() => None,
@@ -550,9 +664,51 @@ impl JobQueue {
         Ok(self.find(id)?.snapshot())
     }
 
+    /// The journal of a job (for persisting it).
+    pub fn journal(&self, id: &str) -> Option<JobJournal> {
+        self.find(id).ok().map(|j| j.journal.lock().clone())
+    }
+
+    /// Changes whenever a job or a journal changed.
+    pub fn generation(&self) -> u64 {
+        self.inner.generation.load(Ordering::Relaxed)
+    }
+
+    /// The static description a job was created with.
+    pub fn spec(&self, id: &str) -> Option<(JobKind, JobSpec, u64)> {
+        self.find(id).ok().map(|j| (j.kind, j.spec.clone(), j.limiter.bytes_per_sec.load(Ordering::Relaxed)))
+    }
+
+    /// Change the speed limit of a job while it runs (bytes per second, 0 = unlimited).
+    pub fn set_speed_limit(&self, id: &str, bytes_per_sec: u64) -> Result<()> {
+        self.find(id)?.limiter.set(bytes_per_sec);
+        Ok(())
+    }
+
+    pub fn pause_all(&self) {
+        let ids: Vec<String> = self.list().into_iter().filter(|j| !j.state.is_finished()).map(|j| j.id).collect();
+        for id in ids {
+            let _ = self.pause(&id);
+        }
+    }
+
+    pub fn resume_all(&self) {
+        let ids: Vec<String> = self.list().into_iter().filter(|j| j.state == JobState::Paused).map(|j| j.id).collect();
+        for id in ids {
+            let _ = self.resume(&id);
+        }
+    }
+
+    pub fn cancel_all(&self) {
+        let ids: Vec<String> = self.list().into_iter().filter(|j| !j.state.is_finished()).map(|j| j.id).collect();
+        for id in ids {
+            let _ = self.cancel(&id);
+        }
+    }
+
     pub fn pause(&self, id: &str) -> Result<()> {
         let j = self.find(id)?;
-        let _ = j.paused.send(true);
+        j.paused.send_replace(true);
         {
             let mut p = j.progress.lock();
             if matches!(p.snapshot.state, JobState::Running | JobState::Queued) {
@@ -565,7 +721,8 @@ impl JobQueue {
 
     pub fn resume(&self, id: &str) -> Result<()> {
         let j = self.find(id)?;
-        let _ = j.paused.send(false);
+        // `send` would drop the value while nobody listens (a job that has not started).
+        j.paused.send_replace(false);
         {
             let mut p = j.progress.lock();
             if p.snapshot.state == JobState::Paused {
@@ -582,16 +739,30 @@ impl JobQueue {
         Ok(())
     }
 
-    /// Run a finished job again (same task, fresh progress).
-    pub fn retry(&self, id: &str) -> Result<Job> {
+    /// Run a finished job again (same task, fresh progress). With `only_missing`, items the
+    /// job finished are skipped: only what failed or was not reached is done again.
+    pub fn retry(&self, id: &str, only_missing: bool) -> Result<Job> {
         let j = self.find(id)?;
         let state = j.progress.lock().snapshot.state;
         if !state.is_finished() {
             return Err(Error::InvalidInput("job is still running".into()));
         }
         let speed = j.limiter.bytes_per_sec.load(Ordering::Relaxed);
+        let journal = only_missing.then(|| {
+            let mut journal = j.journal.lock().clone();
+            if let Some(prev) = &j.previous {
+                journal.done.extend(prev.done.iter().cloned());
+            }
+            journal
+        });
         self.remove(id)?;
-        Ok(self.submit(j.kind, j.spec.clone(), j.task.clone(), speed))
+        Ok(self.submit_with(
+            j.kind,
+            j.spec.clone(),
+            j.task.clone(),
+            speed,
+            SubmitOptions { journal, ..Default::default() },
+        ))
     }
 
     /// Remove a job from the list (cancels it if still running).

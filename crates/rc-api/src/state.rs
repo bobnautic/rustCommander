@@ -18,6 +18,7 @@ use rc_core::{Capabilities, Error, KnownHosts, LocalVfs, Protocol, Result, SiteC
 use rc_discovery::{Discovery, DiscoveryConfig, InstanceInfo, WebInfo};
 
 use crate::events::EventBus;
+use crate::persist::Persistence;
 use crate::prompts::PromptBroker;
 use crate::server::{ServerAuth, ServerControl};
 use crate::settings::Settings;
@@ -162,6 +163,8 @@ pub struct AppState {
     pub server: RwLock<Option<Arc<dyn ServerControl>>>,
     pub server_auth: ServerAuth,
     pub server_error: Mutex<Option<String>>,
+    /// Unfinished jobs and open sessions, kept across restarts.
+    pub persist: Persistence,
     /// Cancelled on shutdown; background loops stop.
     pub shutdown: CancellationToken,
 }
@@ -250,6 +253,7 @@ impl AppState {
             server: RwLock::new(None),
             server_auth: ServerAuth::load(Some(config_dir.join("server.json"))),
             server_error: Mutex::new(None),
+            persist: Persistence::new(&config_dir),
             shutdown: CancellationToken::new(),
         });
         state.add_local_session().await;
@@ -297,8 +301,21 @@ impl AppState {
         });
     }
 
-    /// Start background services (discovery, auto-started web server, peer probing).
+    /// Start background services (discovery, auto-started web server, peer probing) and
+    /// bring back the sessions and jobs of the last run.
     pub async fn start_background(self: &Arc<Self>) {
+        let (restore, resume) = {
+            let s = self.settings.read();
+            (s.restore_sessions, s.resume_jobs)
+        };
+        let restored = crate::persist::restore_jobs(self, resume);
+        if restored > 0 {
+            tracing::info!("{restored} interrupted job(s) restored");
+        }
+        if restore {
+            crate::persist::restore_sessions(self);
+        }
+        crate::persist::spawn_saver(self);
         self.restart_discovery().await;
         let st = self.clone();
         tokio::spawn(async move {
@@ -402,6 +419,8 @@ impl AppState {
     }
 
     pub async fn shutdown(&self) {
+        // Save the queue before closing the connections makes the running jobs fail.
+        self.persist.freeze(self);
         self.shutdown.cancel();
         self.prompts.cancel_all();
         if let Some(d) = self.discovery.lock().take() {

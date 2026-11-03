@@ -135,6 +135,10 @@ pub async fn dispatch(state: &Arc<AppState>, origin: &Origin, method: &str, para
             }
             let p: P = parse(params)?;
             st.vault.unlock(&p.password)?;
+            // Sessions of saved sites could not be restored while the vault was locked.
+            if st.settings.read().restore_sessions {
+                crate::persist::restore_sessions(st);
+            }
             ok(st.vault.status())
         }
         "vault.lock" => {
@@ -275,7 +279,7 @@ pub async fn dispatch(state: &Arc<AppState>, origin: &Origin, method: &str, para
         "fs.mkdir" => ok(fs::mkdir(st, parse(params)?).await?),
         "fs.createFile" => ok(fs::create_file(st, parse(params)?).await?),
         "fs.rename" => ok(fs::rename(st, parse(params)?).await?),
-        "fs.delete" => ok(fs::delete(st, parse(params)?)?),
+        "fs.delete" => ok(fs::delete(st, origin, parse(params)?)?),
         // Synchronous removal of a single path (used by Rust Commander peers).
         "fs.remove" => {
             #[derive(Deserialize)]
@@ -337,9 +341,41 @@ pub async fn dispatch(state: &Arc<AppState>, origin: &Origin, method: &str, para
             ok(Value::Null)
         }
         "jobs.retry" => {
-            let p: Id = parse(params)?;
-            let j: Job = st.jobs.retry(&p.id)?;
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct P {
+                id: String,
+                /// Skip what the job finished: only failed / missing items again.
+                #[serde(default)]
+                only_missing: bool,
+            }
+            let p: P = parse(params)?;
+            let j: Job = st.jobs.retry(&p.id, p.only_missing)?;
+            st.persist.renamed(&p.id, &j.id);
             ok(j)
+        }
+        "jobs.setSpeedLimit" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct P {
+                id: String,
+                bytes_per_sec: u64,
+            }
+            let p: P = parse(params)?;
+            st.jobs.set_speed_limit(&p.id, p.bytes_per_sec)?;
+            ok(Value::Null)
+        }
+        "jobs.pauseAll" => {
+            st.jobs.pause_all();
+            ok(Value::Null)
+        }
+        "jobs.resumeAll" => {
+            st.jobs.resume_all();
+            ok(Value::Null)
+        }
+        "jobs.cancelAll" => {
+            st.jobs.cancel_all();
+            ok(Value::Null)
         }
         "jobs.remove" => {
             let p: Id = parse(params)?;

@@ -7,7 +7,7 @@ use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::jobs::{ConflictAction, ConflictDecision, JobCtx, JobTask};
+use crate::jobs::{journal_key, ConflictAction, ConflictDecision, JobCtx, JobTask};
 use crate::mask::FileMask;
 use crate::ops::{self, WalkOptions};
 use crate::path as vpath;
@@ -131,6 +131,10 @@ impl JobTask for TransferTask {
         let mut moved_by_rename: Vec<(String, String)> = Vec::new();
         for (idx, src_path) in self.src_paths.iter().enumerate() {
             ctx.check().await?;
+            if ctx.journal_done(&self.key(src_path)) {
+                // Finished (e.g. moved away) before the job was interrupted.
+                continue;
+            }
             let entry = match self.src.vfs.stat(src_path).await {
                 Ok(e) => e,
                 Err(e) => {
@@ -163,6 +167,7 @@ impl JobTask for TransferTask {
             if opts.move_files && same_fs && mask.is_empty() {
                 match self.try_rename(ctx, &entry, &dst_path).await {
                     Ok(true) => {
+                        ctx.journal_finish(&self.key(src_path));
                         moved_by_rename.push((src_path.clone(), dst_path));
                         continue;
                     }
@@ -215,6 +220,10 @@ impl JobTask for TransferTask {
 }
 
 impl TransferTask {
+    fn key(&self, src_path: &str) -> String {
+        journal_key(&self.src.session, &vpath::normalize(src_path))
+    }
+
     async fn collect(
         &self,
         ctx: &JobCtx,
@@ -309,11 +318,13 @@ impl TransferTask {
         }
     }
 
-    /// Same SHA-256 on both sides. A checksum that cannot be computed counts as different.
+    /// Same checksum on both sides (SHA-256, or the strongest algorithm both servers compute
+    /// themselves). A checksum that cannot be computed counts as different.
     async fn same_content(&self, src: &FileEntry, target: &FileEntry) -> Result<bool> {
+        let algo = ops::preferred_algo(self.src.vfs.as_ref(), self.dst.vfs.as_ref());
         let (a, b) = tokio::join!(
-            ops::checksum(self.src.vfs.as_ref(), &src.path, ChecksumAlgo::Sha256),
-            ops::checksum(self.dst.vfs.as_ref(), &target.path, ChecksumAlgo::Sha256)
+            ops::checksum(self.src.vfs.as_ref(), &src.path, algo),
+            ops::checksum(self.dst.vfs.as_ref(), &target.path, algo)
         );
         match (a, b) {
             (Ok(a), Ok(b)) => Ok(a == b),
@@ -401,29 +412,54 @@ impl TransferTask {
         ctx.check().await?;
         let opts = &self.options;
         let src = &item.src;
-        let mut dst_path = item.dst_path.clone();
-        let mut offset = 0u64;
-        if let Some(target) = self.dst.vfs.try_stat(&dst_path).await? {
-            if target.is_dir() {
-                return Err(Error::IsADirectory(dst_path));
-            }
-            match self.decide(ctx, src, &target).await? {
-                Decision::Skip => {
-                    ctx.add_bytes(src.size);
-                    ctx.file_done();
-                    return Ok(());
-                }
-                Decision::Write { path, offset: o } => {
-                    dst_path = path;
-                    offset = o;
-                }
-            }
+        let key = self.key(&src.path);
+        if ctx.journal_done(&key) {
+            // Copied before the job was interrupted.
+            ctx.add_bytes(src.size);
+            ctx.file_done();
+            return Ok(());
         }
         let text = match opts.mode {
             TransferMode::Text => true,
             TransferMode::Auto => text_mask.matches_name(&src.name),
             TransferMode::Binary => false,
         };
+        let mut dst_path = item.dst_path.clone();
+        let mut offset = 0u64;
+        // A file this job was writing when it stopped: continue its partial target instead
+        // of asking about "its" own half-written file.
+        let mut resumed: Option<String> = None;
+        if let Some((partial, target)) = ctx.journal_was_active(&key) {
+            let (s, d) = (self.src.vfs.capabilities(), self.dst.vfs.capabilities());
+            if !text && s.resume_download && d.resume_upload {
+                if let Some(t) = self.dst.vfs.try_stat(&partial).await? {
+                    if !t.is_dir() && t.size <= src.size {
+                        offset = t.size;
+                        dst_path = target;
+                        resumed = Some(partial);
+                    }
+                }
+            }
+        }
+        if resumed.is_none() {
+            if let Some(target) = self.dst.vfs.try_stat(&dst_path).await? {
+                if target.is_dir() {
+                    return Err(Error::IsADirectory(dst_path));
+                }
+                match self.decide(ctx, src, &target).await? {
+                    Decision::Skip => {
+                        ctx.add_bytes(src.size);
+                        ctx.file_done();
+                        ctx.journal_finish(&key);
+                        return Ok(());
+                    }
+                    Decision::Write { path, offset: o } => {
+                        dst_path = path;
+                        offset = o;
+                    }
+                }
+            }
+        }
         if text {
             offset = 0;
         }
@@ -433,11 +469,14 @@ impl TransferTask {
             offset = 0;
         }
         ctx.set_current(Some(&src.path));
-        let write_path = if opts.temp_upload && offset == 0 && self.dst.vfs.protocol() != Protocol::Local {
+        let write_path = if let Some(partial) = resumed.filter(|_| offset > 0) {
+            partial
+        } else if opts.temp_upload && offset == 0 && self.dst.vfs.protocol() != Protocol::Local {
             format!("{dst_path}.filepart")
         } else {
             dst_path.clone()
         };
+        ctx.journal_start(&key, &write_path, &dst_path);
         if offset > 0 {
             ctx.add_bytes(offset);
         }
@@ -458,6 +497,7 @@ impl TransferTask {
             if let Err(e) = self.stream(ctx, src, &write_path, offset, text).await {
                 if matches!(e, Error::Cancelled) && offset == 0 && write_path != dst_path {
                     let _ = self.dst.vfs.remove_file(&write_path).await;
+                    ctx.journal_abort(&key);
                 }
                 return Err(e);
             }
@@ -491,11 +531,21 @@ impl TransferTask {
             }
         }
         if opts.verify_checksum && !text {
+            let algo = ops::preferred_algo(self.src.vfs.as_ref(), self.dst.vfs.as_ref());
             let (a, b) = tokio::join!(
-                ops::checksum(self.src.vfs.as_ref(), &src.path, ChecksumAlgo::Sha256),
-                ops::checksum(self.dst.vfs.as_ref(), &dst_path, ChecksumAlgo::Sha256)
+                ops::checksum(self.src.vfs.as_ref(), &src.path, algo),
+                ops::checksum(self.dst.vfs.as_ref(), &dst_path, algo)
             );
-            let (a, b) = (a?, b?);
+            let (mut a, mut b) = (a?, b?);
+            if a != b && algo != ChecksumAlgo::Sha256 {
+                // Metadata checksums (an S3 ETag of an SSE-KMS object is no MD5) can be
+                // wrong: read both files before calling it a mismatch.
+                let (x, y) = tokio::join!(
+                    ops::stream_checksum(self.src.vfs.as_ref(), &src.path, ChecksumAlgo::Sha256),
+                    ops::stream_checksum(self.dst.vfs.as_ref(), &dst_path, ChecksumAlgo::Sha256)
+                );
+                (a, b) = (x?, y?);
+            }
             if a != b {
                 return Err(Error::Other(format!("checksum mismatch after transfer ({a} != {b})")));
             }
@@ -504,6 +554,7 @@ impl TransferTask {
             self.src.vfs.remove_file(&src.path).await?;
         }
         ctx.file_done();
+        ctx.journal_finish(&key);
         Ok(())
     }
 
@@ -519,6 +570,7 @@ impl TransferTask {
                     // Line-ending conversion changes the size (SCP announces it up front).
                     size_hint: (!text).then(|| src.size.saturating_sub(offset)),
                     mode: None,
+                    modified: if self.options.preserve_timestamps { src.modified } else { None },
                 },
             )
             .await?;
@@ -594,31 +646,95 @@ impl LineEndings {
 pub struct DeleteTask {
     pub target: Endpoint,
     pub paths: Vec<String>,
+    /// Move local files to the system trash instead of deleting them.
+    pub trash: bool,
+}
+
+impl DeleteTask {
+    pub fn new(target: Endpoint, paths: Vec<String>) -> Self {
+        DeleteTask { target, paths, trash: false }
+    }
+
+    fn key(&self, path: &str) -> String {
+        journal_key(&self.target.session, &vpath::normalize(path))
+    }
+
+    async fn walk_children(&self, ctx: &JobCtx, path: &str) -> Result<Vec<ops::WalkItem>> {
+        let mut children = Vec::new();
+        ops::walk(self.target.vfs.as_ref(), path, &WalkOptions::default(), |w| {
+            children.push(w);
+            Ok(!ctx.is_cancelled())
+        })
+        .await?;
+        Ok(children)
+    }
+
+    /// Files (in parallel), then directories deepest first, then the directory itself.
+    async fn remove_walked(&self, ctx: &JobCtx, entry: &FileEntry, children: &[ops::WalkItem]) -> Result<()> {
+        let vfs = self.target.vfs.as_ref();
+        let files: Vec<&ops::WalkItem> = children.iter().filter(|c| !c.is_dir).collect();
+        let futs: Vec<_> = files.into_iter().map(|c| remove_counted(ctx, vfs, c)).collect();
+        let results: Vec<Result<()>> = stream::iter(futs).buffer_unordered(4).collect().await;
+        if results.iter().any(|r| r.is_err()) {
+            return Err(Error::Cancelled);
+        }
+        let mut dirs: Vec<&ops::WalkItem> = children.iter().filter(|c| c.is_dir).collect();
+        dirs.sort_by_key(|d| std::cmp::Reverse(d.depth));
+        for d in dirs {
+            ctx.check().await?;
+            // Directory symlinks are removed as files.
+            let r = if d.entry.kind == FileKind::Symlink {
+                vfs.remove_file(&d.entry.path).await
+            } else {
+                vfs.remove_dir(&d.entry.path).await
+            };
+            if let Err(e) = r {
+                ctx.error(&d.entry.path, &e);
+            }
+        }
+        match vfs.remove_dir(&entry.path).await {
+            Ok(()) => ctx.file_done(),
+            Err(e) => ctx.error(&entry.path, &e),
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl JobTask for DeleteTask {
     async fn run(&self, ctx: &JobCtx) -> Result<()> {
         let vfs = self.target.vfs.as_ref();
+        let local = vfs.protocol() == Protocol::Local;
+        let trash = self.trash && local;
+        // On SSH hosts a whole tree goes with one `rm -rf` (no need to list it first).
+        let shortcut = !local && crate::remote::available(vfs);
         ctx.set_scanning(true);
         let mut plan: Vec<(FileEntry, Vec<ops::WalkItem>)> = Vec::new();
         for p in &self.paths {
             ctx.check().await?;
+            if ctx.journal_done(&self.key(p)) {
+                // Restored job: removed before the restart.
+                ctx.add_total(0, 1);
+                ctx.file_done();
+                continue;
+            }
             let entry = match vfs.stat(p).await {
                 Ok(e) => e,
+                Err(Error::NotFound(_)) if ctx.is_restored() => {
+                    ctx.add_total(0, 1);
+                    ctx.file_done();
+                    continue;
+                }
                 Err(e) => {
                     ctx.error(p, &e);
                     continue;
                 }
             };
-            let mut children = Vec::new();
-            if entry.kind == FileKind::Dir && vfs.protocol() != Protocol::Local {
-                ops::walk(vfs, p, &WalkOptions::default(), |w| {
-                    children.push(w);
-                    Ok(!ctx.is_cancelled())
-                })
-                .await?;
-            }
+            let children = if entry.kind == FileKind::Dir && !local && !shortcut {
+                self.walk_children(ctx, p).await?
+            } else {
+                vec![]
+            };
             ctx.add_total(0, 1 + children.iter().filter(|c| !c.is_dir).count() as u64);
             plan.push((entry, children));
         }
@@ -626,44 +742,61 @@ impl JobTask for DeleteTask {
         for (entry, children) in plan {
             ctx.check().await?;
             ctx.set_current(Some(&entry.path));
+            if trash {
+                let native = crate::local::to_native(&entry.path);
+                let r = tokio::task::spawn_blocking(move || trash::delete(&native)).await?;
+                match r {
+                    Ok(()) => {
+                        ctx.file_done();
+                        ctx.journal_finish(&self.key(&entry.path));
+                    }
+                    Err(e) => ctx.error(&entry.path, &Error::Other(format!("cannot move to the trash: {e}"))),
+                }
+                continue;
+            }
             if entry.kind != FileKind::Dir {
                 match vfs.remove_file(&entry.path).await {
-                    Ok(()) => ctx.file_done(),
+                    Ok(()) => {
+                        ctx.file_done();
+                        ctx.journal_finish(&self.key(&entry.path));
+                    }
                     Err(e) => ctx.error(&entry.path, &e),
                 }
                 continue;
             }
-            if vfs.protocol() == Protocol::Local {
+            if local {
                 match vfs.remove_dir_all(&entry.path).await {
-                    Ok(()) => ctx.file_done(),
+                    Ok(()) => {
+                        ctx.file_done();
+                        ctx.journal_finish(&self.key(&entry.path));
+                    }
                     Err(e) => ctx.error(&entry.path, &e),
                 }
                 continue;
             }
-            // Files (in parallel), then directories deepest first.
-            let files: Vec<&ops::WalkItem> = children.iter().filter(|c| !c.is_dir).collect();
-            let futs: Vec<_> = files.into_iter().map(|c| remove_counted(ctx, vfs, c)).collect();
-            let results: Vec<Result<()>> = stream::iter(futs).buffer_unordered(4).collect().await;
-            if results.iter().any(|r| r.is_err()) {
-                return Err(Error::Cancelled);
-            }
-            let mut dirs: Vec<&ops::WalkItem> = children.iter().filter(|c| c.is_dir).collect();
-            dirs.sort_by_key(|d| std::cmp::Reverse(d.depth));
-            for d in dirs {
-                ctx.check().await?;
-                // Directory symlinks are removed as files.
-                let r = if d.entry.kind == FileKind::Symlink {
-                    vfs.remove_file(&d.entry.path).await
-                } else {
-                    vfs.remove_dir(&d.entry.path).await
-                };
-                if let Err(e) = r {
-                    ctx.error(&d.entry.path, &e);
+            if shortcut {
+                match crate::remote::remove_tree(vfs, &entry.path).await {
+                    Ok(true) => {
+                        ctx.file_done();
+                        ctx.journal_finish(&self.key(&entry.path));
+                        continue;
+                    }
+                    Ok(false) => {}
+                    Err(Error::Cancelled) => return Err(Error::Cancelled),
+                    Err(e) => {
+                        ctx.error(&entry.path, &e);
+                        continue;
+                    }
                 }
+                // Not possible on this server: remove entry by entry (reports what fails).
+                let children = self.walk_children(ctx, &entry.path).await?;
+                ctx.add_total(0, children.iter().filter(|c| !c.is_dir).count() as u64);
+                self.remove_walked(ctx, &entry, &children).await?;
+            } else {
+                self.remove_walked(ctx, &entry, &children).await?;
             }
-            match vfs.remove_dir(&entry.path).await {
-                Ok(()) => ctx.file_done(),
-                Err(e) => ctx.error(&entry.path, &e),
+            if vfs.try_stat(&entry.path).await.ok().flatten().is_none() {
+                ctx.journal_finish(&self.key(&entry.path));
             }
         }
         ctx.set_current(None);
@@ -785,7 +918,7 @@ mod tests {
         assert!(vfs.try_stat(&vpath::join(&base, "dst/a (1).txt")).await.unwrap().is_some());
 
         // Delete job.
-        let task = DeleteTask { target: ep.clone(), paths: vec![vpath::join(&base, "dst/src")] };
+        let task = DeleteTask::new(ep.clone(), vec![vpath::join(&base, "dst/src")]);
         let job = q.submit(JobKind::Delete, JobSpec::default(), Arc::new(task), 0);
         assert_eq!(q.wait(&job.id).await.unwrap().state, JobState::Completed);
         assert!(vfs.try_stat(&vpath::join(&base, "dst/src")).await.unwrap().is_none());
@@ -875,5 +1008,129 @@ mod tests {
         assert_eq!(c.convert(b"\nc", false), b"c");
         let mut c = LineEndings::default();
         assert_eq!(c.convert(b"a\nb\r\n", true), b"a\r\nb\r\n");
+    }
+
+    #[tokio::test]
+    async fn restored_job_skips_done_and_resumes_partial_files() {
+        use crate::jobs::{journal_key, JobJournal, SubmitOptions};
+        let (_d, base, vfs) = setup().await;
+        let src = Endpoint::new("a", vfs.clone());
+        let dst = Endpoint::new("b", Arc::new(LocalVfs::new()));
+        let big: Vec<u8> = (0..2_000_000u32).map(|i| (i % 249) as u8).collect();
+        write_all(vfs.as_ref(), &vpath::join(&base, "src/big.bin"), &big).await.unwrap();
+        vfs.mkdir_all(&vpath::join(&base, "dst/src")).await.unwrap();
+        // The earlier run copied a.txt (then the source changed: it must not be copied
+        // again) and wrote the first half of big.bin.
+        write_all(vfs.as_ref(), &vpath::join(&base, "dst/src/a.txt"), b"old").await.unwrap();
+        write_all(vfs.as_ref(), &vpath::join(&base, "src/a.txt"), b"changed").await.unwrap();
+        let partial = vpath::join(&base, "dst/src/big.bin");
+        write_all(vfs.as_ref(), &partial, &big[..1_000_000]).await.unwrap();
+        let mut journal = JobJournal::default();
+        journal.done.insert(journal_key("a", &vpath::join(&base, "src/a.txt")));
+        journal.active.insert(journal_key("a", &vpath::join(&base, "src/big.bin")), (partial.clone(), partial.clone()));
+        let task = TransferTask {
+            src,
+            src_paths: vec![vpath::join(&base, "src")],
+            dst,
+            dst_dir: vpath::join(&base, "dst"),
+            // Asking would block the test: the partial file must not be asked about.
+            options: TransferOptions { overwrite: OverwriteMode::Ask, ..Default::default() },
+        };
+        let q = queue();
+        // Files that do not exist at the target are copied, existing ones would be asked about.
+        let job = q.submit_with(
+            JobKind::Transfer,
+            JobSpec::default(),
+            Arc::new(task),
+            0,
+            SubmitOptions { id: Some("restored".into()), journal: Some(journal), ..Default::default() },
+        );
+        assert_eq!(job.id, "restored");
+        let done = q.wait(&job.id).await.unwrap();
+        assert_eq!(done.state, JobState::Completed, "{:?}", done.errors);
+        assert_eq!(read_to_end(vfs.as_ref(), &vpath::join(&base, "dst/src/a.txt"), 100).await.unwrap(), b"old");
+        assert_eq!(read_to_end(vfs.as_ref(), &partial, 10_000_000).await.unwrap(), big);
+        assert_eq!(read_to_end(vfs.as_ref(), &vpath::join(&base, "dst/src/sub/b.txt"), 100).await.unwrap(), b"bbbb");
+        let journal = q.journal(&job.id).unwrap();
+        assert!(journal.active.is_empty());
+        assert!(journal.done.contains(&journal_key("a", &vpath::join(&base, "src/sub/c.log"))));
+    }
+
+    #[tokio::test]
+    async fn retry_only_what_is_missing() {
+        let (_d, base, vfs) = setup().await;
+        let q = queue();
+        let ep = Endpoint::new("local", vfs.clone());
+        // dst/src/sub is a file: everything below it fails.
+        vfs.mkdir_all(&vpath::join(&base, "dst/src")).await.unwrap();
+        write_all(vfs.as_ref(), &vpath::join(&base, "dst/src/sub"), b"in the way").await.unwrap();
+        let task = TransferTask {
+            src: ep.clone(),
+            src_paths: vec![vpath::join(&base, "src")],
+            dst: ep.clone(),
+            dst_dir: vpath::join(&base, "dst"),
+            options: TransferOptions { overwrite: OverwriteMode::Overwrite, ..Default::default() },
+        };
+        let job = q.submit(JobKind::Transfer, JobSpec::default(), Arc::new(task), 0);
+        let failed = q.wait(&job.id).await.unwrap();
+        assert_eq!(failed.state, JobState::Failed);
+        let a = vpath::join(&base, "dst/src/a.txt");
+        vfs.set_modified(&a, 1_000_000).await.unwrap();
+        vfs.remove_file(&vpath::join(&base, "dst/src/sub")).await.unwrap();
+        let again = q.retry(&job.id, true).unwrap();
+        let done = q.wait(&again.id).await.unwrap();
+        assert_eq!(done.state, JobState::Completed, "{:?}", done.errors);
+        // a.txt was copied by the first run and not again (its time is untouched).
+        assert_eq!(vfs.stat(&a).await.unwrap().modified, Some(1_000_000));
+        assert!(vfs.try_stat(&vpath::join(&base, "dst/src/sub/b.txt")).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn paused_job_waits_without_taking_a_slot() {
+        use crate::jobs::SubmitOptions;
+        let (_d, base, vfs) = setup().await;
+        let q = JobQueue::new(1, Arc::new(|_| {}));
+        let ep = Endpoint::new("local", vfs.clone());
+        let mk = |dst: &str| TransferTask {
+            src: ep.clone(),
+            src_paths: vec![vpath::join(&base, "src/a.txt")],
+            dst: ep.clone(),
+            dst_dir: vpath::join(&base, dst),
+            options: TransferOptions { overwrite: OverwriteMode::Overwrite, ..Default::default() },
+        };
+        vfs.mkdir(&vpath::join(&base, "dst2")).await.unwrap();
+        let paused = q.submit_with(
+            JobKind::Transfer,
+            JobSpec::default(),
+            Arc::new(mk("dst")),
+            0,
+            SubmitOptions { paused: true, ..Default::default() },
+        );
+        let other = q.submit(JobKind::Transfer, JobSpec::default(), Arc::new(mk("dst2")), 0);
+        assert_eq!(q.wait(&other.id).await.unwrap().state, JobState::Completed);
+        assert_eq!(q.get(&paused.id).unwrap().state, JobState::Paused);
+        q.resume(&paused.id).unwrap();
+        assert_eq!(q.wait(&paused.id).await.unwrap().state, JobState::Completed);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn delete_to_trash() {
+        let (_d, base, vfs) = setup().await;
+        // A private trash: the freedesktop trash lives in $XDG_DATA_HOME/Trash.
+        let home = tempfile::tempdir().unwrap();
+        std::env::set_var("XDG_DATA_HOME", home.path());
+        let q = queue();
+        let mut task = DeleteTask::new(Endpoint::new("local", vfs.clone()), vec![vpath::join(&base, "src/sub")]);
+        task.trash = true;
+        let job = q.submit(JobKind::Delete, JobSpec::default(), Arc::new(task), 0);
+        let done = q.wait(&job.id).await.unwrap();
+        if done.state == JobState::Failed {
+            // Some CI file systems have no usable trash (different mount): nothing was deleted.
+            assert!(vfs.try_stat(&vpath::join(&base, "src/sub")).await.unwrap().is_some());
+            return;
+        }
+        assert_eq!(done.state, JobState::Completed, "{:?}", done.errors);
+        assert!(vfs.try_stat(&vpath::join(&base, "src/sub")).await.unwrap().is_none());
     }
 }

@@ -167,7 +167,8 @@ fn extract(ctx: &JobCtx, src: &Path, dst: &Path, format: ArchiveFormat) -> Resul
                     #[cfg(unix)]
                     if let Some(mode) = f.unix_mode() {
                         use std::os::unix::fs::PermissionsExt;
-                        let _ = std::fs::set_permissions(&out, std::fs::Permissions::from_mode(mode & 0o7777));
+                        // Never setuid/setgid/sticky bits from an archive (privilege escalation).
+                        let _ = std::fs::set_permissions(&out, std::fs::Permissions::from_mode(mode & 0o777));
                     }
                 }
                 ctx.file_done();

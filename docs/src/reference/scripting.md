@@ -122,6 +122,7 @@ synchronize <remote|local|both> [local] [remote] [switches]
 | `-mirror` | Mirror mode: also replace newer files on the target |
 | `-criteria=time\|size\|either\|checksum` | How files are compared (default `time`) |
 | `-filemask=<mask>` | Include/exclude files |
+| `-conflict=skip\|local\|remote\|both\|fail` | Files changed on both sides: skip them (default), the local or the remote version wins, keep both versions (the remote one as `name (1).ext`), or stop with an error |
 | `-preview` | Only print the planned actions |
 
 The transfer switches above (`-speed`, `-verify`, `-parallel` …) apply as well. Without

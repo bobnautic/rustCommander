@@ -17,7 +17,9 @@ On macOS, **Ctrl** is **⌘**, **Shift** is **⇧** and **Alt** is **⌥**.
 | F6 | Move |
 | Shift+F6 | Move without dialog |
 | F7 | New folder |
-| F8 / Delete | Delete |
+| F8 / Delete | Delete (local files: to the trash) |
+| Shift+F8 / Shift+Delete | Delete permanently |
+| Ctrl+Z | Undo the last rename or move |
 | Alt+Enter | Properties |
 | Ctrl+Shift+C | Copy path |
 | Ctrl+K | Compare fingerprints with the other panel |

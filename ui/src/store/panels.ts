@@ -415,6 +415,22 @@ export function onSessionClosed(id: string) {
   }
 }
 
+/** Panels whose saved session was not connected at start: the backend may be connecting it
+ * again (restored sessions). The panel goes back there when it arrives, unless the user
+ * navigated elsewhere meanwhile. */
+const awaitingRestore: Partial<Record<Side, { session: string; path: string; seq: number; until: number }>> = {};
+
+/** A session was opened (e.g. reconnected after a restart). */
+export function onSessionRestored(s: SessionSummary) {
+  for (const side of ['left', 'right'] as Side[]) {
+    const w = awaitingRestore[side];
+    if (!w || w.session !== s.id) continue;
+    delete awaitingRestore[side];
+    if (Date.now() > w.until || getPanel(side).seq !== w.seq) continue;
+    void navigate(side, s.id, w.path || s.initialDir || s.home || '/', { history: false, select: null });
+  }
+}
+
 export async function initPanels(sessions: SessionSummary[]) {
   const saved = load<{ left?: SavedPanel; right?: SavedPanel } | null>('panels', null);
   const has = (id: string | undefined) => !!id && sessions.some((s) => s.id === id);
@@ -441,11 +457,18 @@ export async function initPanels(sessions: SessionSummary[]) {
         sortDesc: sv?.sortDesc ?? false,
         lastPaths: Object.fromEntries(Object.entries(sv?.lastPaths ?? {}).filter(([k]) => has(k))),
       });
-      return navigate(side, session, path || '/', { history: false, select: null }).then((ok) => {
-        if (!ok && session !== 'local') return navigate(side, 'local', local?.home || '/', { history: false });
-        if (!ok && path !== (local?.home ?? '/')) return navigate(side, 'local', local?.home || '/', { history: false });
-        return ok;
-      });
+      return navigate(side, session, path || '/', { history: false, select: null })
+        .then((ok) => {
+          if (!ok && session !== 'local') return navigate(side, 'local', local?.home || '/', { history: false });
+          if (!ok && path !== (local?.home ?? '/')) return navigate(side, 'local', local?.home || '/', { history: false });
+          return ok;
+        })
+        .then((ok) => {
+          if (sv && sv.session !== 'local' && !has(sv.session)) {
+            awaitingRestore[side] = { session: sv.session, path: sv.path, seq: getPanel(side).seq, until: Date.now() + 5 * 60_000 };
+          }
+          return ok;
+        });
     }),
   );
 }

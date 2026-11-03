@@ -95,7 +95,7 @@ pub async fn connect_site_opts(
 }
 
 /// Connect; with `reuse_id` the new connection replaces that session under the same id.
-async fn connect_as(
+pub(crate) async fn connect_as(
     state: &Arc<AppState>,
     mut site: SiteConfig,
     shell_fallback: bool,
@@ -154,6 +154,7 @@ async fn connect_as(
         connected_at: chrono::Utc::now().timestamp(),
     };
     tracing::info!(session = %id, "connected to {}", site.display_name());
+    state.persist.session_opened(&id, &summary.name, summary.site_id.as_deref(), &site);
     let replaced = state.sessions.write().insert(id.clone(), Arc::new(Session { summary: summary.clone(), vfs, site }));
     if let Some(old) = replaced {
         stop_bound(state, &id);
@@ -175,6 +176,7 @@ pub async fn close(state: &AppState, id: &str) -> Result<()> {
     }
     let s = state.sessions.write().remove(id).ok_or_else(|| Error::NotFound(format!("session {id}")))?;
     stop_bound(state, id);
+    state.persist.session_closed(id);
     let _ = s.vfs.close().await;
     tracing::info!(session = %id, "disconnected from {}", s.summary.name);
     state.events.emit("session.closed", serde_json::json!({ "id": id, "reason": null }));

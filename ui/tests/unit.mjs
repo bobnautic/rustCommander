@@ -156,6 +156,20 @@ try {
     const out = m.formatDialect('select a,b from t where x=1', { dialect: m.postgresql, keywordCase: 'preserve', tabWidth: 2 });
     eq(out, 'select\n  a,\n  b\nfrom\n  t\nwhere\n  x = 1');
   });
+
+  await test('translations: same keys, placeholders and plural forms in every language', async () => {
+    const { en } = await load('/src/i18n/en.ts');
+    const { de } = await load('/src/i18n/de.ts');
+    eq(Object.keys(de).sort(), Object.keys(en).sort(), 'keys');
+    const vars = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+    const bad = [];
+    for (const k of Object.keys(en)) {
+      if (JSON.stringify(vars(en[k])) !== JSON.stringify(vars(de[k]))) bad.push(`${k}: {${vars(en[k])}} vs {${vars(de[k])}}`);
+      if (en[k].includes('|') !== de[k].includes('|')) bad.push(`${k}: plural forms differ`);
+      if (!de[k].trim()) bad.push(`${k}: empty`);
+    }
+    if (bad.length) throw new Error(bad.slice(0, 10).join('; '));
+  });
 } finally {
   await vite.close();
 }

@@ -116,17 +116,43 @@ pub struct PathsParams {
     pub paths: Vec<String>,
 }
 
-pub fn delete(state: &AppState, p: PathsParams) -> Result<Job> {
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteParams {
+    pub session: String,
+    pub paths: Vec<String>,
+    /// Delete for good even where the trash would be used.
+    #[serde(default)]
+    pub permanent: bool,
+}
+
+/// Deleting in this session moves files to the trash: local files deleted in the desktop
+/// app itself (not by web clients of a shared instance, whose UI deletes for good), when
+/// the setting is on.
+pub fn uses_trash(state: &AppState, origin: &Origin, session: &str) -> bool {
+    session == LOCAL_SESSION
+        && state.mode == crate::state::AppMode::Desktop
+        && !matches!(origin, Origin::Web { .. })
+        && state.settings.read().use_trash
+}
+
+pub fn delete(state: &AppState, origin: &Origin, p: DeleteParams) -> Result<Job> {
     let vfs = state.vfs(&p.session)?;
+    let trash = !p.permanent && uses_trash(state, origin, &p.session);
+    let verb = if trash { "Move to trash" } else { "Delete" };
     let title = if p.paths.len() == 1 {
-        format!("Delete {}", vpath::file_name(&p.paths[0]))
+        format!("{verb}: {}", vpath::file_name(&p.paths[0]))
     } else {
-        format!("Delete {} items", p.paths.len())
+        format!("{verb}: {} items", p.paths.len())
     };
     let spec =
         JobSpec { title, src_session: Some(p.session.clone()), src_paths: p.paths.clone(), ..Default::default() };
-    let task = DeleteTask { target: Endpoint::new(p.session, vfs), paths: p.paths };
-    Ok(state.jobs.submit(JobKind::Delete, spec, Arc::new(task), 0))
+    let desc = crate::persist::JobDescriptor::Delete { session: p.session.clone(), paths: p.paths.clone(), trash };
+    let mut task = DeleteTask::new(Endpoint::new(p.session, vfs), p.paths);
+    task.trash = trash;
+    let job = state.jobs.submit(JobKind::Delete, spec, Arc::new(task), 0);
+    state.persist.register(&job.id, desc);
+    Ok(job)
 }
 
 #[derive(Debug, Deserialize)]
@@ -163,6 +189,21 @@ pub async fn set_attributes(state: &AppState, p: AttrParams) -> Result<()> {
     };
     for path in &p.paths {
         let e = vfs.stat(path).await?;
+        if p.recursive && e.kind == rc_core::FileKind::Dir && rc_core::remote::available(vfs.as_ref()) {
+            // One `find -exec chmod/chown` on the server instead of a request per entry.
+            let attrs = rc_core::remote::TreeAttributes {
+                file_mode: p.permissions,
+                dir_mode: p.dir_permissions.or(p.permissions),
+                owner,
+                group,
+            };
+            if rc_core::remote::set_tree_attributes(vfs.as_ref(), path, &attrs).await? {
+                if let Some(m) = p.modified {
+                    vfs.set_modified(path, m).await?;
+                }
+                continue;
+            }
+        }
         if p.recursive && e.kind == rc_core::FileKind::Dir {
             let mut items = Vec::new();
             ops::walk(vfs.as_ref(), path, &WalkOptions::default(), |w| {

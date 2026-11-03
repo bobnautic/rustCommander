@@ -8,6 +8,7 @@ import { useContextMenu } from '../components/Menu';
 import { focusPathBar } from '../components/panel/PathBar';
 import * as ops from './fileOps';
 import { openSiteManager } from './sessions';
+import { undoLast } from './undo';
 
 type Action = (side: Side, e: KeyboardEvent) => void;
 
@@ -34,7 +35,10 @@ export const BINDINGS: Record<string, Action> = {
   F7: (s) => void ops.makeDir(s),
   F8: (s) => void ops.deleteSelection(s),
   Delete: (s) => void ops.deleteSelection(s),
-  'Shift+Delete': (s) => void ops.deleteSelection(s),
+  // Shift: delete for good instead of moving to the trash.
+  'Shift+F8': (s) => void ops.deleteSelection(s, true),
+  'Shift+Delete': (s) => void ops.deleteSelection(s, true),
+  'Ctrl+Z': () => void undoLast(),
   'Alt+Enter': (s) => void ops.showProperties(s),
   'Ctrl+R': (s) => void refresh(s),
   F9: (s) => void refresh(s),

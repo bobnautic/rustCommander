@@ -3,19 +3,7 @@
 use crate::error::Error;
 use crate::types::{parse_mode_string, ChecksumAlgo, DiskInfo, FileKind};
 
-/// Quote a string for a POSIX shell (`'...'`).
-pub(crate) fn quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', r"'\''"))
-}
-
-/// Quote a path; a leading `-` is protected with `./` so commands do not take it as an option.
-pub(crate) fn quote_path(p: &str) -> String {
-    if p.starts_with('-') {
-        quote(&format!("./{p}"))
-    } else {
-        quote(p)
-    }
-}
+pub(crate) use crate::remote::{quote, quote_path};
 
 /// Map the stderr of a failed shell command to an error kind.
 pub(crate) fn command_error(stderr: &str, exit: Option<i32>, path: &str) -> Error {

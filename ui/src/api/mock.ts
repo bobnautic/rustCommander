@@ -441,6 +441,9 @@ function defaultSettings(): T.Settings {
     doubleClickAction: 'edit',
     sizeFormat: 'auto',
     maxConcurrentJobs: 2,
+    useTrash: true,
+    restoreSessions: true,
+    resumeJobs: true,
     transfer: defaultTransfer(),
     discovery: { enabled: true, port: 8823, instanceName: 'demo-workstation', intervalSecs: 30 },
     server: { autoStart: false, bind: '0.0.0.0', port: 8822, tls: true, allowTerminal: true },
@@ -1195,7 +1198,7 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
     return { ...mj.job };
   }
 
-  function startDelete(session: string, paths: string[]): T.Job {
+  function startDelete(session: string, paths: string[], permanent = false): T.Job {
     const s = sessionOf(session);
     const rebuild = () => {
       const steps: Step[] = [];
@@ -1209,8 +1212,9 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
       return steps;
     };
     for (const p of paths) s.fs.get(p, false) ?? fail('not_found', `No such file: ${p}`);
-    const what = paths.length === 1 ? `'${P.basename(paths[0])}'` : `${paths.length} items`;
-    const mj = makeJob('delete', `Delete ${what}`, { srcSession: session, srcPaths: [...paths] }, { ...settings.transfer }, rebuild);
+    const what = paths.length === 1 ? P.basename(paths[0]) : `${paths.length} items`;
+    const trash = !permanent && session === 'local' && settings.useTrash && info.mode === 'desktop';
+    const mj = makeJob('delete', `${trash ? 'Move to trash' : 'Delete'}: ${what}`, { srcSession: session, srcPaths: [...paths] }, { ...settings.transfer }, rebuild);
     return { ...mj.job };
   }
 
@@ -1314,13 +1318,15 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
     return plan;
   }
 
-  function syncExecute(planId: string, actionIds: string[], options?: Partial<T.TransferOptions>): T.Job {
+  function syncExecute(planId: string, actionIds: string[], options?: Partial<T.TransferOptions>, resolutions: Record<string, T.ConflictResolution> = {}): T.Job {
     const plan = plans.get(planId) ?? fail('not_found', 'Sync plan not found (expired?)');
     const prm = plan.params;
     const L = sessionOf(prm.leftSession);
     const R = sessionOf(prm.rightSession);
     const ids = new Set(actionIds);
-    const chosen = plan.actions.filter((a) => ids.has(a.id));
+    // Conflicts without a resolution are skipped (like the backend).
+    const chosen = plan.actions.filter((a) => ids.has(a.id) && (a.action !== 'conflict' || (resolutions[a.id] && resolutions[a.id] !== 'skip')));
+    if (!chosen.length) fail('invalid_input', 'nothing to synchronize (unresolved conflicts are skipped)');
     const o: T.TransferOptions = { ...settings.transfer, ...(options ?? {}), overwrite: 'overwrite', move: false };
     const rebuild = () => {
       const steps: Step[] = [];
@@ -1328,10 +1334,18 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
       for (const a of chosen) {
         const lp = P.join(prm.leftPath, a.relPath);
         const rp = P.join(prm.rightPath, a.relPath);
-        if (a.action === 'copyLeftToRight' || (a.action === 'conflict' && (a.left?.modified ?? 0) >= (a.right?.modified ?? 0))) {
+        const res = a.action === 'conflict' ? resolutions[a.id] : undefined;
+        if (res === 'keepBoth') {
+          // the right version under a numbered name on both sides, the left one under the name
+          const dot = a.relPath.lastIndexOf('.');
+          const alt = dot > 0 ? `${a.relPath.slice(0, dot)} (1)${a.relPath.slice(dot)}` : `${a.relPath} (1)`;
+          planCopy(R.fs, rp, L.fs, P.join(prm.leftPath, alt), L.summary.id, o, steps, mask);
+          planCopy(R.fs, rp, R.fs, P.join(prm.rightPath, alt), R.summary.id, o, steps, mask);
+          planCopy(L.fs, lp, R.fs, rp, R.summary.id, o, steps, mask);
+        } else if (a.action === 'copyLeftToRight' || res === 'leftWins') {
           steps.push({ t: 'mkdir', fs: R.fs, path: P.dirname(rp), session: R.summary.id });
           planCopy(L.fs, lp, R.fs, rp, R.summary.id, o, steps, mask);
-        } else if (a.action === 'copyRightToLeft' || a.action === 'conflict') {
+        } else if (a.action === 'copyRightToLeft' || res === 'rightWins') {
           steps.push({ t: 'mkdir', fs: L.fs, path: P.dirname(lp), session: L.summary.id });
           planCopy(R.fs, rp, L.fs, lp, L.summary.id, o, steps, mask);
         } else if (a.action === 'deleteLeft' || a.action === 'deleteRight') {
@@ -1892,7 +1906,7 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
       log('info', `Renamed ${from} to ${to}`, session);
       return null;
     },
-    'fs.delete': (p) => startDelete(String(p.session), p.paths as string[]),
+    'fs.delete': (p) => startDelete(String(p.session), p.paths as string[], !!p.permanent),
     'fs.setAttributes': (p) => {
       setAttrs(p as never);
       return null;
@@ -2094,6 +2108,35 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
       ensureTicker();
       return { ...mj.job };
     },
+    'jobs.setSpeedLimit': (p) => {
+      jobs.get(String(p.id)) ?? fail('not_found', 'Job not found');
+      return null;
+    },
+    'jobs.pauseAll': () => {
+      for (const mj of jobs.values()) {
+        if (mj.job.state === 'running' || mj.job.state === 'queued') {
+          mj.job.state = 'paused';
+          mj.job.speed = 0;
+          mj.job.eta = null;
+          emit('job.updated', { ...mj.job });
+        }
+      }
+      return null;
+    },
+    'jobs.resumeAll': () => {
+      for (const mj of jobs.values()) {
+        if (mj.job.state === 'paused') {
+          mj.job.state = 'queued';
+          emit('job.updated', { ...mj.job });
+        }
+      }
+      ensureTicker();
+      return null;
+    },
+    'jobs.cancelAll': () => {
+      for (const mj of jobs.values()) if (!['completed', 'failed', 'cancelled'].includes(mj.job.state)) finishJob(mj, 'cancelled');
+      return null;
+    },
     'jobs.remove': (p) => {
       const id = String(p.id);
       const mj = jobs.get(id);
@@ -2149,7 +2192,7 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
       deleteObsolete: false, compareSize: true, compareTime: true, compareChecksum: false, timeTolerance: 2, fileMask: '', excludeHidden: false, nonRecursive: false,
     } satisfies T.SyncParams),
     'sync.compare': (p) => syncCompare(p.params as T.SyncParams),
-    'sync.execute': (p) => syncExecute(String(p.planId), p.actionIds as string[], p.options as Partial<T.TransferOptions> | undefined),
+    'sync.execute': (p) => syncExecute(String(p.planId), p.actionIds as string[], p.options as Partial<T.TransferOptions> | undefined, (p.resolutions ?? {}) as Record<string, T.ConflictResolution>),
     'sync.discard': (p) => {
       plans.delete(String(p.planId));
       return null;

@@ -56,11 +56,45 @@ answer for the remaining files of the job.
 Every copy, move, delete and synchronization runs as a **job** in the background. The
 **Queue** tab in the dock shows progress, speed, remaining time and errors per job.
 
-- **Pause**, **Resume**, **Cancel** and **Retry** per job; **Clear finished** tidies up.
+- **Pause**, **Resume**, **Cancel** and **Retry** per job; **Pause all**, **Resume all**
+  and **Cancel all** in the toolbar; **Clear finished** tidies up.
+- **Retry only what failed** runs a failed or cancelled job again but skips every file it
+  already finished.
+- The **speed limit** of a running job can be changed (gauge button, KiB/s, 0 = unlimited).
 - While the queue is hidden, the status bar shows the overall progress.
 - Interrupted transfers can be resumed where the protocol allows it (all except uploads to
   object storage).
 - Dropped connections are re-established automatically and the operation is retried.
+
+### After a restart or a crash
+
+Unfinished jobs are saved continuously (`jobs.json`) together with the files they have
+already finished. When Rust Commander starts again, they are back in the queue with their
+ids: finished files are skipped, a file that was being written is continued where it
+stopped, the rest is done as planned. Jobs that were running continue by themselves
+(*Preferences* → *Transfer* → **Continue interrupted transfers after a restart**; without
+it they come back paused); paused jobs stay paused.
+
+The connections that were open are connected again under the same session ids
+(**Reconnect the sessions that were open when the app was closed**), so the panels and
+tabs show them again. Saved sites use their stored credentials; ad-hoc connections ask
+for the password again, because passwords of unsaved connections are never written to
+disk. When the vault is locked, the reconnect waits until it is unlocked. A session you
+close yourself is not opened again.
+
+### Checksums on object storage
+
+S3, Azure Blob Storage and Google Cloud Storage keep an MD5 checksum of most objects in
+their metadata (the ETag of single-part S3 uploads, `Content-MD5`, `md5Hash`). Fingerprint
+comparisons, *Overwrite if the content differs*, *verify after transfer* and
+synchronizations by checksum use it instead of downloading the object; when one side is
+an object store, both sides are compared by MD5. A mismatch found this way after a
+transfer is double-checked with SHA-256 by reading both files, because an S3 ETag is not
+an MD5 for some objects (SSE-KMS, SSE-C).
+
+Uploads to object storage keep the **modification time** of the source in the user
+metadata `mtime` (the same key rclone uses). Rust Commander shows and compares that time
+instead of the upload time, so synchronizations by time work with buckets too.
 
 ## Web mode: browser uploads and downloads
 
