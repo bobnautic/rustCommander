@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import {
   ArrowLeft, ChevronDown, ChevronRight, Copy, Download, Eye, EyeOff, FilePlus2, Folder, FolderOpen, FolderPen, FolderPlus, FileUp, LogIn,
   MoreHorizontal, Network, Plus, Save, Search, Trash2, Upload, X, Zap,
