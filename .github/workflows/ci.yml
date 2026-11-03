@@ -37,13 +37,13 @@ jobs:
         working-directory: ui
       - run: node tests/smoke.mjs
         working-directory: ui
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ui-smoke-screenshots
           path: ui/tests/screenshots
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ui-dist
           path: ui/dist
@@ -95,7 +95,7 @@ jobs:
       - run: cargo test --workspace --no-fail-fast
       - name: Headless server binary
         run: cargo build --release -p rc-cli
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: rcmd-${{ runner.os }}
           path: |
