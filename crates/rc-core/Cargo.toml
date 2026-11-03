@@ -43,9 +43,9 @@ fs4 = "1"
 portable-pty = "0.9"
 tokio-socks = "0.5"
 notify = "8"
-roxmltree = "0.20"
+roxmltree = "0.21"
 chacha20poly1305 = "0.10"
-argon2 = "0.5"
+argon2 = "0.6"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 tar = "0.4"
 flate2 = "1"
@@ -55,7 +55,7 @@ trash = "5"
 # 0.13 is what OpenDAL's HTTP transport is built on; TLS uses the ring provider.
 reqwest = { workspace = true, features = ["socks"] }
 rustls.workspace = true
-tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 russh = { version = "0.65", default-features = false, features = ["flate2", "ring", "rsa"], optional = true }
 russh-sftp = { version = "3.0.1", optional = true }
 
@@ -78,7 +78,7 @@ opendal = { version = "0.59", default-features = false, features = [
     "services-gcs",
 ], optional = true }
 opendal-http-transport-reqwest = { version = "0.59", default-features = false, features = ["rustls-no-provider"], optional = true }
-hmac = { version = "0.12", optional = true }
+hmac = { version = "0.13", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

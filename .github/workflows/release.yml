@@ -53,7 +53,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         if: github.event_name == 'pull_request'
       - name: Determine version
         id: version
@@ -93,7 +93,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.prepare.outputs.tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Note in a release created on GitHub
         run: |
           set -euo pipefail
@@ -145,8 +145,8 @@ jobs:
       # RPM versions cannot contain "-", so pre-releases come without an .rpm package
       RPM: ${{ needs.prepare.outputs.prerelease != 'true' }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -207,7 +207,7 @@ jobs:
               if [ "$RPM" = true ]; then cp target/release/bundle/rpm/*.rpm "$out/$base-linux-x86_64.rpm"; fi ;;
           esac
           ls -l "$out"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-desktop-${{ matrix.name }}
           path: release-assets/*
@@ -230,8 +230,8 @@ jobs:
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -260,7 +260,7 @@ jobs:
             tar -czf "release-assets/$dir.tar.gz" "$dir"
           fi
           ls -l release-assets
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-rcmd-${{ matrix.name }}
           path: release-assets/*
@@ -283,8 +283,8 @@ jobs:
       DRAFT: ${{ inputs.draft || false }}
       MAC_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: dist
@@ -358,7 +358,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.prepare.outputs.tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Note in a release created on GitHub
         run: |
           set -euo pipefail
