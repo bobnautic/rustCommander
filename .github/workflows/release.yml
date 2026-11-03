@@ -207,7 +207,7 @@ jobs:
               if [ "$RPM" = true ]; then cp target/release/bundle/rpm/*.rpm "$out/$base-linux-x86_64.rpm"; fi ;;
           esac
           ls -l "$out"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-desktop-${{ matrix.name }}
           path: release-assets/*
@@ -260,7 +260,7 @@ jobs:
             tar -czf "release-assets/$dir.tar.gz" "$dir"
           fi
           ls -l release-assets
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-rcmd-${{ matrix.name }}
           path: release-assets/*
