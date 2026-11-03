@@ -4635,7 +4635,7 @@ dependencies = [
  "futures",
  "globset",
  "hex",
- "hmac 0.12.1",
+ "hmac 0.13.0",
  "libc",
  "md-5 0.10.6",
  "notify",
