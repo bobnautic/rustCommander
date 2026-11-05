@@ -1,15 +1,17 @@
 name: Release
 
-# A release is cut by pushing a version tag:
+# A release is cut with "Run workflow" on the Actions tab (enter the version; the tag is
+# created on the selected branch's commit) or by pushing a version tag:
 #   git tag v0.2.0 && git push origin v0.2.0
-# or with "Run workflow" on the Actions tab (enter the version; the tag is created on the
-# selected branch). Every platform is built and tested first; the GitHub release with all
-# downloads is created only when everything succeeded.
+# Every platform is built and tested first. Then the release is created as a draft with all
+# downloads (DMG, Windows installer and portable exe, AppImage/deb/rpm, rcmd archives,
+# SHA256SUMS.txt), the uploaded files are checked against the built ones, and only then the
+# release is published. So a release never shows up without its downloads.
 # A release published by hand on GitHub (with a new tag v<version>) works too: publishing
 # creates the tag, which starts this workflow. The release shows a note with a link to the
 # build until the downloads and the download table are added to it.
-# Pull requests that change the packaging build all downloads as well (with the version in
-# the repository, as workflow artifacts only; nothing is published).
+# Pull requests that change the packaging build and check all downloads as well (with the
+# version in the repository, as workflow artifacts only; nothing is published).
 
 on:
   push:
@@ -142,8 +144,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
-      # RPM versions cannot contain "-", so pre-releases come without an .rpm package
-      RPM: ${{ needs.prepare.outputs.prerelease != 'true' }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -184,10 +185,22 @@ jobs:
           for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
             [ -n "${!v}" ] || unset "$v"
           done
-          if [ "$RPM" != true ]; then BUNDLES="${BUNDLES/,rpm/}"; fi
+          # RPM versions cannot contain "-": a pre-release gets its .rpm in the next step
+          if [ "$PRERELEASE" = true ]; then BUNDLES="${BUNDLES/,rpm/}"; fi
           args=(--bundles "$BUNDLES")
           if [ -n "$TARGET" ]; then args+=(--target "$TARGET"); fi
           npx tauri build "${args[@]}" -- --locked
+      - name: RPM for a pre-release
+        if: runner.os == 'Linux' && env.PRERELEASE == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 0.2.0-beta.1 is packaged as version 0.2.0, release 0.beta.1 ("-" is not allowed in
+          # either), which RPM sorts before the final 0.2.0 (release 1). The app inside is the
+          # one built above and reports 0.2.0-beta.1.
+          pre="${VERSION#*-}"
+          config=$(jq -nc --arg v "${VERSION%%-*}" --arg r "0.${pre//-/_}" '{version: $v, bundle: {linux: {rpm: {release: $r}}}}')
+          npx tauri bundle --bundles rpm --config "$config"
       - name: Collect downloads
         shell: bash
         run: |
@@ -204,7 +217,7 @@ jobs:
             Linux)
               cp target/release/bundle/appimage/*.AppImage "$out/$base-linux-x86_64.AppImage"
               cp target/release/bundle/deb/*.deb "$out/$base-linux-amd64.deb"
-              if [ "$RPM" = true ]; then cp target/release/bundle/rpm/*.rpm "$out/$base-linux-x86_64.rpm"; fi ;;
+              cp target/release/bundle/rpm/*.rpm "$out/$base-linux-x86_64.rpm" ;;
           esac
           ls -l "$out"
       - uses: actions/upload-artifact@v7
@@ -266,34 +279,58 @@ jobs:
           path: release-assets/*
           if-no-files-found: error
 
-  publish:
-    name: Publish release
-    needs: [prepare, checks, desktop, rcmd]
-    if: ${{ github.event_name != 'pull_request' && !inputs.dry-run }}
+  downloads:
+    name: Downloads
+    needs: [prepare, desktop, rcmd]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
+    timeout-minutes: 10
     env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.prepare.outputs.tag }}
       VERSION: ${{ needs.prepare.outputs.version }}
-      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
-      DRAFT: ${{ inputs.draft || false }}
       MAC_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
     steps:
-      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: dist
           merge-multiple: true
-      - name: Checksums
+      # Runs on pull requests too, so a missing or renamed download fails there, not at release.
+      - name: Check the downloads
         working-directory: dist
         run: |
-          sha256sum -- * > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+          set -euo pipefail
+          b="rustCommander-$VERSION"
+          expected=(
+            "$b-macos-universal.dmg"
+            "$b-windows-x64-setup.exe"
+            "$b-windows-x64-portable.exe"
+            "$b-linux-x86_64.AppImage"
+            "$b-linux-amd64.deb"
+            "$b-linux-x86_64.rpm"
+            "rcmd-$VERSION-linux-x86_64.tar.gz"
+            "rcmd-$VERSION-linux-aarch64.tar.gz"
+            "rcmd-$VERSION-macos-arm64.tar.gz"
+            "rcmd-$VERSION-macos-x86_64.tar.gz"
+            "rcmd-$VERSION-windows-x64.zip"
+          )
+          if ! diff -u <(printf '%s\n' "${expected[@]}" | sort) <(ls -1 | sort); then
+            echo "::error::The downloads differ from the expected files (- missing, + unexpected)"
+            exit 1
+          fi
+          if empty=$(find . -type f -empty) && [ -n "$empty" ]; then
+            echo "::error::Empty downloads: $empty"
+            exit 1
+          fi
+          mkdir -p ../index
+          sha256sum -- * > ../index/SHA256SUMS.txt
+          cat ../index/SHA256SUMS.txt
+          {
+            echo "### Downloads $VERSION"
+            echo
+            echo '```'
+            du -h -- *
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Download table
         run: |
           set -euo pipefail
@@ -307,9 +344,7 @@ jobs:
             echo "| macOS 10.13+ (Apple silicon and Intel) | [\`$b-macos-universal.dmg\`]($url/$b-macos-universal.dmg) |"
             echo "| Windows 10/11, installer | [\`$b-windows-x64-setup.exe\`]($url/$b-windows-x64-setup.exe) |"
             echo "| Windows 10/11, portable (no installation) | [\`$b-windows-x64-portable.exe\`]($url/$b-windows-x64-portable.exe) |"
-            linux="[\`.AppImage\`]($url/$b-linux-x86_64.AppImage) · [\`.deb\`]($url/$b-linux-amd64.deb)"
-            if [ "$PRERELEASE" != true ]; then linux="$linux · [\`.rpm\`]($url/$b-linux-x86_64.rpm)"; fi
-            echo "| Linux | $linux |"
+            echo "| Linux x86_64 | [\`.AppImage\`]($url/$b-linux-x86_64.AppImage) · [\`.deb\`]($url/$b-linux-amd64.deb) · [\`.rpm\`]($url/$b-linux-x86_64.rpm) |"
             echo "| Headless server and CLI (\`rcmd\`) | \`rcmd-$VERSION-<platform>.tar.gz\` / \`.zip\` below |"
             echo
             echo "Checksums: \`SHA256SUMS.txt\` (\`shasum -a 256 -c SHA256SUMS.txt --ignore-missing\`)."
@@ -321,33 +356,116 @@ jobs:
               echo
             fi
             echo "> **Windows:** the installer is not code-signed. If SmartScreen warns, click **More info → Run anyway**."
-          } > downloads.md
-          cat downloads.md
-      - name: Create GitHub release
+          } > index/downloads.md
+          cat index/downloads.md
+      # checksums and table only; the files themselves are taken from the release-* artifacts
+      - uses: actions/upload-artifact@v7
+        with:
+          name: download-index
+          path: index/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [prepare, checks, downloads]
+    if: ${{ github.event_name != 'pull_request' && !inputs.dry-run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+      DRAFT: ${{ inputs.draft || false }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: download-index
+          path: index
+      - name: Files of the release
+        run: |
+          set -euo pipefail
+          mv index/SHA256SUMS.txt dist/
+          # exactly the files that were checked in the Downloads job
+          (cd dist && sha256sum -c --strict SHA256SUMS.txt)
+          if [ "$(ls dist | wc -l)" != "$(($(wc -l < dist/SHA256SUMS.txt) + 1))" ]; then
+            echo "::error::dist holds files that are not in SHA256SUMS.txt"
+            exit 1
+          fi
+      - name: Tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          # A pushed tag brings its own. For "Run workflow" it is created now on the built commit.
+          # Tags made with the workflow token start no second run of this workflow, so
+          # publishing a draft by hand later does not rebuild everything.
+          if sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha 2>/dev/null); then
+            if [ "$sha" != "$GITHUB_SHA" ]; then
+              echo "::error::Tag $TAG points to $sha, not to the built commit $GITHUB_SHA"
+              exit 1
+            fi
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" >/dev/null
+            echo "Created tag $TAG on $GITHUB_SHA"
+          fi
+      - name: Upload the files
         run: |
           set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then
-            # created on GitHub (or by an earlier run): add the files and the download table,
-            # keep the notes written there
+            # created on GitHub (or by an earlier attempt): add the files and the download
+            # table, keep the notes written there
             echo "Release $TAG exists, adding its files"
             gh release upload "$TAG" dist/* --clobber
-            gh release view "$TAG" --json body --jq .body | bash scripts/release-notes.sh downloads.md > notes.md
+            gh release view "$TAG" --json body --jq .body | bash scripts/release-notes.sh index/downloads.md > notes.md
             gh release edit "$TAG" --notes-file notes.md >/dev/null
           else
+            # a draft first: nobody sees the release before all files are on it
             # changes since the previous release (pull requests and contributors)
             gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" --jq .body |
-              bash scripts/release-notes.sh downloads.md > notes.md
-            args=(--title "Rust Commander $TAG" --notes-file notes.md)
-            if [ "$GITHUB_EVENT_NAME" = push ]; then args+=(--verify-tag); else args+=(--target "$GITHUB_SHA"); fi
+              bash scripts/release-notes.sh index/downloads.md > notes.md
+            args=(--title "Rust Commander $TAG" --notes-file notes.md --verify-tag --draft)
             if [ "$PRERELEASE" = true ]; then args+=(--prerelease); fi
-            if [ "$DRAFT" = true ]; then args+=(--draft); fi
             gh release create "$TAG" dist/* "${args[@]}"
           fi
-          echo "Published [$TAG]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Check the uploaded files
+        run: |
+          set -euo pipefail
+          # every built file is on the release with its size and SHA-256 digest (GitHub reports
+          # the digest of each uploaded file); one created by hand may hold more files
+          (cd dist && for f in *; do echo "$f $(stat -c %s "$f") sha256:$(sha256sum < "$f" | cut -d' ' -f1)"; done) > built.txt
+          gh release view "$TAG" --json assets --jq '.assets[] | select(.state == "uploaded") | "\(.name) \(.size) \(.digest // "")"' > uploaded.txt
+          bad=$(awk 'NR == FNR { size[$1] = $2; digest[$1] = $3; next }
+            !($1 in size) || size[$1] != $2 || (digest[$1] != "" && digest[$1] != $3) { print $1 }' uploaded.txt built.txt)
+          if [ -n "$bad" ]; then
+            echo "::error::Missing on release $TAG or different from the built file:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "All $(wc -l < built.txt) files are on release $TAG"
+      - name: Publish
+        run: |
+          set -euo pipefail
+          link="[$TAG]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG)"
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" != true ]; then
+            echo "Updated $link" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$DRAFT" = true ]; then
+            echo "Draft $link is ready, publish it on the Releases page" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh release edit "$TAG" --draft=false >/dev/null
+            echo "Published $link" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   build-failed:
     name: Report failed build
-    needs: [prepare, checks, desktop, rcmd, publish]
+    needs: [prepare, checks, desktop, rcmd, downloads, publish]
     if: ${{ (failure() || cancelled()) && github.event_name == 'push' && needs.prepare.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
