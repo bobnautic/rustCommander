@@ -15,16 +15,16 @@ as `-beta.1`).
    git commit -am "Release 0.2.0"
    ```
 
-2. Start the release, either by pushing a tag:
+2. Start the release on GitHub under **Actions → Release → Run workflow**: pick the branch
+   (`main`), enter the version (`0.2.0`) and run it. The tag `v0.2.0` is created on that
+   branch's latest commit once everything is built. Pushing a tag works the same way:
 
    ```bash
    git tag v0.2.0
    git push origin v0.2.0
    ```
 
-   or on GitHub under **Actions → Release → Run workflow**: pick the branch, enter the
-   version (`0.2.0`) and run it. The tag `v0.2.0` is then created on that branch's latest
-   commit when the release is published.
+   About 25 minutes later the release is on the Releases page, with all downloads.
 
    A release created by hand works as well: **Releases → Draft a new release**, choose a
    *new* tag `v0.2.0`, write the notes and **Publish release**. Publishing creates the tag,
@@ -45,18 +45,28 @@ skipped.
 | Checks | Linux, Windows, macOS | the [CI](testing.md#continuous-integration) checks: UI build and tests, `cargo fmt`, `clippy`, `cargo test` |
 | Desktop (macOS) | `macos-latest` | `rustCommander-<version>-macos-universal.dmg` (Apple silicon and Intel) |
 | Desktop (Windows) | `windows-latest` | `rustCommander-<version>-windows-x64-setup.exe` (NSIS installer, English/German) and `rustCommander-<version>-windows-x64-portable.exe` |
-| Desktop (Linux) | `ubuntu-22.04` | `.AppImage`, `.deb` and `.rpm` (RPM versions cannot contain `-`, so pre-releases have no `.rpm`) |
+| Desktop (Linux) | `ubuntu-22.04` | `.AppImage`, `.deb` and `.rpm` |
 | rcmd | Linux x86_64/aarch64, macOS arm64/x86_64, Windows x64 | `rcmd-<version>-<platform>.tar.gz` / `.zip` |
+| Downloads | | checks that exactly the expected files were built (none missing or empty), `SHA256SUMS.txt`, the download table |
 | Publish release | | the GitHub release with all files, `SHA256SUMS.txt`, download table and generated release notes |
 
-The release is only created when **every** job succeeded, so a release never has missing
-downloads. A version with a suffix (`1.0.0-rc.1`) becomes a pre-release; the newest regular
-release is marked *latest*, so
-`https://github.com/bobnautic/rustcommander/releases/latest` always points to it.
+The release is only created when **every** job succeeded. It is created as a draft, all files
+are uploaded and compared with the built ones (size and SHA-256 digest), and only then it is
+published — so a release never shows up with missing downloads, and the repository setting
+*immutable releases* can be on.
+
+A version with a suffix (`1.0.0-rc.1`) becomes a pre-release. Its `.rpm` is packaged as
+version `1.0.0`, release `0.rc.1`, because RPM versions cannot contain `-`; RPM sorts it
+before the final `1.0.0`. GitHub never marks a pre-release as *Latest*: as long as there are
+only pre-releases, `https://github.com/bobnautic/rustcommander/releases/latest` shows the
+list of releases, and the files are in the *Assets* section of each release (collapsed on the
+list, open on the release's own page). The newest regular release is marked *Latest*, and
+`releases/latest` then points to it.
 
 **Run workflow** has two more options:
 
-- **draft** — create the release as a draft and publish it by hand after a look at it.
+- **draft** — leave the release as a draft (with all files) and publish it by hand after a
+  look at it. The tag already exists then, so publishing does not start another build.
 - **dry-run** — only build; the files can be downloaded from the workflow run's
   *Artifacts* section and no tag or release is created. Useful to test packaging changes.
 
