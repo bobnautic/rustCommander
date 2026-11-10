@@ -36,7 +36,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-parking_lot = "0.12"
+parking_lot = "0.13"
 base64 = "0.23"
 sha2 = "0.11"
 md-5 = "0.11"
