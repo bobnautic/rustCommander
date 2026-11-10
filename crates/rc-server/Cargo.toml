@@ -21,7 +21,7 @@ sha2.workspace = true
 chrono.workspace = true
 rustls.workspace = true
 axum = { version = "0.8", features = ["ws", "macros"] }
-axum-server = { version = "0.8", default-features = false, features = ["tls-rustls-no-provider"] }
+axum-server = { version = "0.9", default-features = false, features = ["tls-rustls-no-provider"] }
 rust-embed = { version = "8", features = ["debug-embed"] }
 mime_guess = "2"
 rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
