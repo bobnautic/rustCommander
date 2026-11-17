@@ -62,7 +62,7 @@ russh-sftp = { version = "3.0.1", optional = true }
 # TLS (ftp, cloud)
 webpki-roots = { version = "1", optional = true }
 rustls-native-certs = { version = "0.8", optional = true }
-x509-cert = { version = "0.2", default-features = false, optional = true }
+x509-cert = { version = "0.3", default-features = false, optional = true }
 
 # FTP / FTPS
 # `deprecated` enables implicit FTPS (`connect_secure_implicit`).
