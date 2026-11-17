@@ -25,7 +25,7 @@ axum-server = { version = "0.9", default-features = false, features = ["tls-rust
 rust-embed = { version = "8", features = ["debug-embed"] }
 mime_guess = "2"
 rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
-async_zip = { version = "0.0.17", default-features = false, features = ["tokio", "chrono"] }
+async_zip = { version = "0.0.19", default-features = false, features = ["tokio", "chrono"] }
 percent-encoding = "2"
 base64.workspace = true
 uuid.workspace = true
