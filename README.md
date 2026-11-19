@@ -34,7 +34,7 @@ SFTP · SCP · FTP/FTPS · WebDAV · S3 · Azure · Google Cloud Storage — on 
 ### 🗂️ Classic commander, modern feel
 Two panels, session tabs, bookmarks, drag & drop and full keyboard control with the
 **original Norton Commander layout** and function key bar — or Total Commander's.
-Light and dark theme, English and German.
+Light and dark theme, ten skins, English and German.
 
 </td>
 <td width="50%" valign="top">
@@ -109,6 +109,17 @@ optional Argon2id master password), throttled and CSRF-protected web logins.
 
 </td>
 </tr>
+<tr>
+<td colspan="2" valign="top">
+
+### 🎨 Skins
+Ten built-in skins — from the standard look to *Retro Blue*, *Nord*, *Solarized*, *Catppuccin*,
+*Gruvbox*, *Dracula* and *High Contrast* — that color everything, terminal and editor included.
+Adjust accent, row height, fonts and corners, or **create your own** in the skin editor or as a
+small JSON file: [Skins](docs/src/guide/skins.md) · [Creating skins](docs/src/guide/creating-skins.md).
+
+</td>
+</tr>
 </table>
 
 ## 📸 Screenshots
@@ -120,6 +131,8 @@ optional Argon2id master password), throttled and CSRF-protected web logins.
 | ![Remote Explorer](docs/src/images/remote-explorer.png) | ![Synchronization checklist](docs/src/images/sync-checklist.png) |
 | **Nearby instances on the LAN** | **Share this instance** |
 | ![Nearby](docs/src/images/nearby.png) | ![Share this instance](docs/src/images/share.png) |
+| **Skins** | **Skin editor** |
+| ![Skins in Preferences](docs/src/images/skins-gallery.png) | ![Skin editor](docs/src/images/skin-editor.png) |
 
 ## 🚀 Quick start
 
@@ -176,6 +189,7 @@ The full documentation lives in [`docs/`](docs/) and can be built as a website w
 | **Deployment** | [Editor](docs/src/guide/editor.md) · [Remote Explorer](docs/src/guide/remote-explorer.md) | **Development** |
 | [Headless server](docs/src/deployment/headless-server.md) | [Terminal and SSH tunnels](docs/src/guide/terminal-and-tunnels.md) | [Architecture](docs/src/development/architecture.md) |
 | [Security](docs/src/deployment/security.md) | [LAN discovery](docs/src/guide/lan-discovery.md) · [Web mode](docs/src/guide/web-mode.md) | [Testing](docs/src/development/testing.md) · [Releasing](docs/src/development/releasing.md) |
+| | [Skins](docs/src/guide/skins.md) · [Creating skins](docs/src/guide/creating-skins.md) | [Skin tokens](docs/src/reference/skin-tokens.md) |
 
 ## 🛠️ Building
 

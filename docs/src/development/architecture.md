@@ -77,6 +77,10 @@ pin it.
 - `ui/src/components/` — panels, dock, sidebar, editor (CodeMirror 6), terminal
   (xterm.js) and dialogs.
 - `ui/src/i18n/` — English and German strings.
+- `ui/src/lib/skins/` and `ui/src/skins/` — the skin engine (tokens, validation,
+  derivation, applying CSS custom properties) and the built-in skins as JSON files; user
+  skins are stored by the backend in `<config dir>/skins/` (`crates/rc-api/src/skins.rs`).
+  See [Creating skins](../guide/creating-skins.md).
 
 The same build (`ui/dist`) is bundled into the desktop app and embedded into
 `rc-server`.

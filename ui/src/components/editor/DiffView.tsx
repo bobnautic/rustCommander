@@ -2,9 +2,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { EditorState, type Extension } from '@codemirror/state';
 import { EditorView, drawSelection, highlightSpecialChars, lineNumbers } from '@codemirror/view';
-import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { MergeView, getChunks, goToNextChunk, goToPreviousChunk, unifiedMergeView } from '@codemirror/merge';
-import { oneDark } from '@codemirror/theme-one-dark';
+import { skinEditorTheme } from '../../lib/editor/skinTheme';
 import { detectLanguage } from '../../lib/editor/languages';
 import { useApp } from '../../store/app';
 
@@ -53,7 +52,7 @@ export function DiffView({ a, b, fileName, mode, collapse, onChunks, navRef }: P
       layout,
       EditorState.readOnly.of(true),
       EditorView.editable.of(false),
-      dark ? oneDark : syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      skinEditorTheme(dark ? 'dark' : 'light'),
     ];
     if (lang) ext.push(lang);
     const collapseUnchanged = collapse ? { margin: 3, minSize: 6 } : undefined;

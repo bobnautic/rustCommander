@@ -4,11 +4,12 @@ import {
   GitCompareArrows, Hash, Info, Keyboard, Link2, ListChecks, Lock, LogOut, Menu as MenuIcon, Monitor, Moon, MoveRight, Network,
   PanelBottom, PanelLeft, Pencil, Plus, RefreshCw, Search, Settings, Share2, SquareTerminal, Sun, SunMoon, Trash2, Unplug, Upload,
   Command, Archive, ArrowDownUp, Radar, ClipboardCopy, FolderOpen, Route, Repeat, FolderTree, Fingerprint, GitCompare, FileSearch,
-  Undo2,
+  Undo2, Palette,
 } from 'lucide-react';
 import { call, mode, webLogout } from '../api/client';
 import { useT, type TFn } from '../i18n';
-import { cycleTheme, saveSettings, setLayout, setTheme, toggleDock, toggleHidden, toggleSidebar, useApp } from '../store/app';
+import { cycleTheme, saveSettings, setLayout, setSkin, setTheme, toggleDock, toggleHidden, toggleSidebar, useApp } from '../store/app';
+import { allSkins } from '../store/skins';
 import { openDialog, openSingleton } from '../store/dialogs';
 import { getPanel, navigate, other, patchPanel, refresh, selectAll, selectNone, invertSelection, setSort, usePanels, type SortKey } from '../store/panels';
 import * as ops from '../actions/fileOps';
@@ -171,6 +172,21 @@ export function buildMenus(t: TFn): { id: string; label: string; items: () => Me
               { label: t('theme.system'), icon: Monitor, checked: theme === 'system', onClick: () => setTheme('system') },
               { label: t('theme.light'), icon: Sun, checked: theme === 'light', onClick: () => setTheme('light') },
               { label: t('theme.dark'), icon: Moon, checked: theme === 'dark', onClick: () => setTheme('dark') },
+            ],
+          },
+          {
+            label: t('view.skin'),
+            icon: Palette,
+            testId: 'menu-skin',
+            submenu: [
+              ...allSkins().map((e): MenuItem => ({
+                label: e.skin.name,
+                checked: (st.settings?.appearance?.skin || 'default') === e.skin.id,
+                testId: `menu-skin-${e.skin.id}`,
+                onClick: () => setSkin(e.skin.id),
+              })),
+              { separator: true },
+              { label: t('view.appearance'), icon: Palette, onClick: () => openSingleton('preferences', { tab: 'appearance' }), testId: 'menu-appearance' },
             ],
           },
           {

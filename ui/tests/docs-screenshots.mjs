@@ -88,6 +88,13 @@ async function open({ theme = 'light', width = 1440, height = 860, scale = 1, qu
       await page.locator(`[data-testid="tb-${view}"]`).click();
       await page.locator(`[data-testid="${view}"]`).waitFor();
     },
+    /** View → Skin → `id` (the mock backend starts with the default skin). */
+    skin: async (id) => {
+      await page.locator('[data-testid="menu-view"]').click();
+      await page.locator('[data-testid="menu-skin"]').hover();
+      await page.locator(`[data-testid="menu-skin-${id}"]`).click();
+      await page.waitForFunction((x) => document.documentElement.dataset.skin === x, id);
+    },
     terminal: async (commands) => {
       await page.locator('[data-testid="tb-terminal"]').click();
       const term = page.locator('.term-pane:not(.hidden) .xterm');
@@ -310,6 +317,68 @@ try {
     await h.terminal(['uname -a', 'df -h', 'ls']);
     await h.snap('terminal.png');
     await h.ctx.close();
+  });
+
+  // Skins: the gallery in Preferences, the skin editor and every built-in skin.
+  await shot('skins', async () => {
+    const h = await open();
+    await h.page.locator('[data-testid="menu-view"]').click();
+    await h.page.locator('[data-testid="menu-skin"]').hover();
+    await h.page.locator('[data-testid="menu-appearance"]').click();
+    await h.page.locator('[data-testid="appearance"]').waitFor();
+    await h.snap('skins-gallery.png');
+    await h.ctx.close();
+  });
+
+  await shot('skin-editor', async () => {
+    const h = await open({ theme: 'dark' });
+    await h.page.locator('[data-testid="menu-view"]').click();
+    await h.page.locator('[data-testid="menu-skin"]').hover();
+    await h.page.locator('[data-testid="menu-appearance"]').click();
+    await h.page.locator('[data-testid="skin-nord"]').hover();
+    await h.page.locator('[data-testid="skin-edit-nord"]').click();
+    const ed = h.dialog('Skin editor');
+    await ed.waitFor();
+    await ed.locator('[data-testid="skin-name"]').fill('Nord Sunset');
+    await ed.locator('.tok-row[data-token="accent"] .tok-input').fill('#ff8a65');
+    await ed.locator('.se-scroll').evaluate((el) => (el.scrollTop = 0));
+    await h.snap('skin-editor.png');
+    await h.ctx.close();
+  });
+
+  await shot('skins-overview', async () => {
+    const looks = [
+      ['default', 'light', 'Rust Commander'], ['ember', 'light', 'Ember'], ['graphite', 'light', 'Graphite'], ['retro-blue', 'dark', 'Retro Blue'],
+      ['high-contrast', 'dark', 'High Contrast'], ['nord', 'dark', 'Nord'], ['solarized', 'light', 'Solarized'], ['catppuccin', 'dark', 'Catppuccin'],
+      ['gruvbox', 'dark', 'Gruvbox'], ['dracula', 'dark', 'Dracula'],
+    ];
+    const tiles = [];
+    for (const [id, theme, name] of looks) {
+      const h = await open({ theme, width: 1200, height: 720 });
+      await h.skin(id);
+      await h.connectWeb01();
+      await h.row('right', 'index.html').click();
+      await h.terminal(['ls']);
+      await h.row('left', 'index.html').click();
+      await h.page.keyboard.press('Insert');
+      await h.page.mouse.move(0, 719);
+      await h.page.waitForTimeout(250);
+      tiles.push({ id, theme, name, png: (await h.page.screenshot({ animations: 'disabled' })).toString('base64') });
+      await h.ctx.close();
+    }
+    const ctx = await browser.newContext({ viewport: { width: 1200, height: 800 }, deviceScaleFactor: 1 });
+    const p = await ctx.newPage();
+    const cell = (t) => `<figure><img src="data:image/png;base64,${t.png}"><figcaption>${t.name} <span>${t.id} · ${t.theme}</span></figcaption></figure>`;
+    await p.setContent(`<style>
+      body { margin: 0; padding: 16px; background: #f4f5f7; font: 600 15px system-ui, sans-serif; color: #1b2028; }
+      main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      figure { margin: 0; } img { display: block; width: 100%; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+      figcaption { margin: 7px 2px 0; } span { color: #6f7782; font-weight: 400; }
+    </style><main>${tiles.map(cell).join('')}</main>`);
+    await p.waitForTimeout(300);
+    await p.screenshot({ path: join(out, 'skins-overview.jpg'), fullPage: true, type: 'jpeg', quality: 86 });
+    console.log('  ✔ skins-overview.jpg');
+    await ctx.close();
   });
 
   await shot('login', async () => {

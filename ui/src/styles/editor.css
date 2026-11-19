@@ -32,7 +32,7 @@
   padding: 0 4px 0 11px;
   border: 1px solid transparent;
   border-bottom: none;
-  border-radius: 7px 7px 0 0;
+  border-radius: min(7px, var(--radius-panel)) min(7px, var(--radius-panel)) 0 0;
   color: var(--text-2);
   cursor: pointer;
   white-space: nowrap;
@@ -40,7 +40,7 @@
 .editor-tab:hover { background: var(--surface-3); }
 .editor-tab.on { margin-bottom: -1px; height: 32px; background: var(--surface); border-color: var(--border); color: var(--text); font-weight: 500; }
 .editor-tab-name { overflow: hidden; text-overflow: ellipsis; }
-.editor-tab-close { display: inline-flex; padding: 3px; border-radius: 4px; color: var(--muted); }
+.editor-tab-close { display: inline-flex; padding: 3px; border-radius: min(4px, var(--radius)); color: var(--muted); }
 .editor-tab-close:hover { background: var(--border); color: var(--text); }
 .editor-toolbar { display: flex; align-items: center; gap: 4px; flex: none; height: 40px; padding: 0 10px; border-bottom: 1px solid var(--border); }
 .editor-toolbar > .btn { margin-right: 4px; }
@@ -52,7 +52,6 @@
 .cm-host .cm-editor.cm-focused { outline: none; }
 .cm-host .cm-scroller { font-family: var(--mono); line-height: 1.55; }
 .cm-host .cm-gutters { border-right: 1px solid var(--border-soft); }
-:root:not([data-theme='dark']) .cm-host .cm-gutters { background: var(--surface-2); color: var(--faint); }
 .cm-panels { font-family: var(--font); }
 
 .image-viewer { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -110,7 +109,7 @@
   overflow: hidden;
   white-space: nowrap;
 }
-.es-item { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border-radius: 4px; color: inherit; font-variant-numeric: tabular-nums; }
+.es-item { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border-radius: min(4px, var(--radius)); color: inherit; font-variant-numeric: tabular-nums; }
 button.es-item:hover { background: var(--surface-3); color: var(--text); }
 .es-item.static { cursor: default; }
 .es-item.err { color: var(--err); }
@@ -132,7 +131,7 @@ button.es-item:hover { background: var(--surface-3); color: var(--text); }
   box-shadow: var(--shadow-lg);
 }
 .lang-list { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
-.lang-item { text-align: left; padding: 4px 8px; border-radius: 4px; font-size: 13px; }
+.lang-item { text-align: left; padding: 4px 8px; border-radius: min(4px, var(--radius)); font-size: 13px; }
 .lang-item.on { background: var(--accent-weak); color: var(--text); }
 .lang-item.current { font-weight: 600; color: var(--accent); }
 .lang-hint { padding: 0 4px; }
@@ -175,7 +174,7 @@ button.es-item:hover { background: var(--surface-3); color: var(--text); }
 .fp-status { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 500; white-space: nowrap; }
 .fp-status.accent { color: var(--accent); }
 .fp-hashes { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.fp-hash { text-align: left; font-size: 11.5px; color: var(--text-2); border-radius: 3px; padding: 0 3px; }
+.fp-hash { text-align: left; font-size: 11.5px; color: var(--text-2); border-radius: min(3px, var(--radius)); padding: 0 3px; }
 .fp-hash:hover { background: var(--surface-3); color: var(--text); }
 .fp-identical .fp-hash { color: var(--ok); }
 .conflict-fp { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 28px; }
@@ -183,7 +182,7 @@ button.es-item:hover { background: var(--surface-3); color: var(--text); }
 /* ---------------------------------------------------------------- open file */
 .of-session { flex: none; width: auto; min-width: 120px; max-width: 40%; }
 .of-list { display: flex; flex-direction: column; height: 260px; overflow: auto; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
-.of-item { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; border-radius: 4px; text-align: left; font-size: 13px; }
+.of-item { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; border-radius: min(4px, var(--radius)); text-align: left; font-size: 13px; }
 .of-item:hover, .of-item.on { background: var(--accent-weak); }
 .of-item > .muted { margin-left: auto; flex: none; }
 .of-note { display: flex; align-items: center; gap: 6px; padding: 8px; font-size: 12.5px; }

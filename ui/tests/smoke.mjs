@@ -309,6 +309,63 @@ try {
     await snap(page, 'main-dark.png');
   });
 
+  await step('skins: menu, live preview in Preferences, skin editor, adjustments', async () => {
+    const root = () => page.evaluate(() => ({ skin: document.documentElement.dataset.skin, theme: document.documentElement.dataset.theme, surface: getComputedStyle(document.documentElement).getPropertyValue('--surface').trim(), accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() }));
+    const pickSkin = async (id) => {
+      await page.locator('[data-testid="menu-view"]').click();
+      await page.locator('[data-testid="menu-skin"]').hover();
+      await page.locator(`[data-testid="menu-skin-${id}"]`).click();
+    };
+    await pickSkin('retro-blue');
+    await page.waitForFunction(() => document.documentElement.dataset.skin === 'retro-blue');
+    let r = await root();
+    assert(r.surface === '#0000a8' && r.theme === 'dark', `retro-blue not applied: ${JSON.stringify(r)}`);
+    await snap(page, 'skin-retro-blue.png');
+
+    // Preferences → Appearance previews live and reverts on cancel
+    await page.locator('[data-testid="menu-view"]').click();
+    await page.locator('[data-testid="menu-skin"]').hover();
+    await page.locator('[data-testid="menu-appearance"]').click();
+    const prefs = dialog('Preferences');
+    await prefs.locator('[data-testid="appearance"]').waitFor();
+    await prefs.locator('[data-testid="skin-nord"]').click();
+    await page.waitForFunction(() => document.documentElement.dataset.skin === 'nord');
+    await prefs.getByRole('button', { name: 'Cancel' }).click();
+    await page.waitForFunction(() => document.documentElement.dataset.skin === 'retro-blue');
+
+    // a new skin from the editor, saved and used
+    await page.keyboard.press('Control+,');
+    await prefs.waitFor();
+    await prefs.getByRole('tab', { name: 'Appearance' }).click();
+    await prefs.locator('[data-testid="skin-new"]').click();
+    const ed = dialog('Skin editor');
+    await ed.waitFor();
+    await ed.locator('[data-testid="skin-name"]').fill('Smoke Skin');
+    assert((await ed.locator('[data-testid="skin-id"]').inputValue()) === 'smoke-skin', 'id not derived from the name');
+    await ed.locator('.tok-row[data-token="accent"] .tok-input').fill('#ff8800');
+    await ed.locator('[data-testid="skin-save-use"]').click();
+    await ed.waitFor({ state: 'detached' });
+    await prefs.locator('[data-testid="skin-smoke-skin"][aria-checked="true"]').waitFor();
+    await prefs.locator('[data-testid="skin-density"]').selectOption('compact');
+    await prefs.locator('button[type=submit]').click();
+    await prefs.waitFor({ state: 'detached' });
+    await page.waitForFunction(() => document.documentElement.dataset.skin === 'smoke-skin');
+    r = await root();
+    assert(r.accent === '#ff8800', `accent of the new skin: ${r.accent}`);
+    const rowH = await page.locator('[data-testid="table-left"] .ft-row').first().evaluate((el) => el.getBoundingClientRect().height);
+    assert(rowH === 20, `compact rows are ${rowH}px`);
+
+    // back to the default look
+    await page.keyboard.press('Control+,');
+    await prefs.waitFor();
+    await prefs.getByRole('tab', { name: 'Appearance' }).click();
+    await prefs.locator('[data-testid="skin-default"]').click();
+    await prefs.locator('[data-testid="skin-density"]').selectOption('');
+    await prefs.locator('button[type=submit]').click();
+    await prefs.waitFor({ state: 'detached' });
+    await page.waitForFunction(() => document.documentElement.dataset.skin === 'default');
+  });
+
   await step('German language', async () => {
     await page.keyboard.press('Control+,');
     const prefs = dialog('Preferences');

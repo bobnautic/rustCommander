@@ -253,6 +253,132 @@ try {
     eq(km.keyBarLayer({ ctrl: false, alt: true, shift: false }), 'Alt+');
     eq(km.keyBarLayer({ ctrl: true, alt: false, shift: true }), 'Ctrl+Shift+');
   });
+
+  // ------------------------------------------------------------ skins
+  const color = await load('/src/lib/skins/color.ts');
+  const tokens = await load('/src/lib/skins/tokens.ts');
+  const engine = await load('/src/lib/skins/engine.ts');
+  const { BUILTIN_SKINS } = await load('/src/skins/index.ts');
+  const byId = new Map(BUILTIN_SKINS.map((s) => [s.id, s]));
+  const lookup = (id) => byId.get(id);
+
+  await test('skins: colors are parsed and normalized', () => {
+    eq(color.normalizeColor('#ABC'), '#aabbcc');
+    eq(color.normalizeColor('#11223380'), 'rgba(17, 34, 51, 0.502)');
+    eq(color.normalizeColor('rgb(1, 2, 3)'), '#010203');
+    eq(color.normalizeColor('rgb(1 2 3 / 50%)'), 'rgba(1, 2, 3, 0.5)');
+    eq(color.normalizeColor('rgba(255,0,0,.25)'), 'rgba(255, 0, 0, 0.25)');
+    eq(color.normalizeColor('hsl(120, 100%, 25%)'), '#008000');
+    eq(color.normalizeColor(' white '), '#ffffff');
+    eq(color.normalizeColor('transparent'), 'rgba(0, 0, 0, 0)');
+    for (const bad of ['red', '#12', 'rgb(1,2)', 'url(x)', 'var(--x)', '#fff;}body{', 'expression(alert(1))']) eq(color.normalizeColor(bad), null, bad);
+    eq(Math.round(color.contrast(color.parseColor('#000'), color.parseColor('#fff'))), 21);
+    eq(color.toHex6('rgba(10, 20, 30, 0.5)'), '#0a141e');
+  });
+
+  await test('skins: validation keeps good values and reports bad ones', () => {
+    const v = engine.validateSkin({
+      $schema: 'x',
+      id: 'ocean',
+      name: 'Ocean',
+      extends: 'nord',
+      style: { radius: 99, density: 'huge', stripes: true, fontUi: 'Inter, sans-serif', fontMono: 'x;}body{color:red' },
+      dark: { accent: '#0af', '--bg': '#001020', nope: '#fff', text: 'url(https://evil)', shadow: '0 1px 2px rgba(0,0,0,.3)', 'shadow-lg': 'url(x)' },
+      light: 5,
+      extra: true,
+    });
+    eq(v.errors, []);
+    eq(v.skin.style, { radius: 16, stripes: true, fontUi: 'Inter, sans-serif' });
+    eq(v.skin.dark, { accent: '#00aaff', bg: '#001020', shadow: '0 1px 2px rgba(0,0,0,.3)' });
+    eq(v.skin.light, undefined);
+    eq(v.warnings.length, 8, v.warnings.join(' | '));
+    eq(engine.validateSkin({ id: '../x', name: 'x' }).skin, null);
+    eq(engine.validateSkin({ id: 'x' }).errors.length, 1);
+    eq(engine.validateSkin([]).skin, null);
+  });
+
+  await test('skins: derived tokens follow what a skin sets', () => {
+    const def = lookup('default');
+    const base = engine.resolveSkin(def, lookup, 'light');
+    eq(base.tokens.accent, '#2563d9');
+    eq(base.tokens['cursor-fg'], undefined, 'optional tokens stay unset');
+    eq(base.vars['--radius'], '6px');
+    eq(base.rowHeight, 22);
+    const mine = { id: 'mine', name: 'Mine', light: { accent: '#ff0000', green: '#00aa00' } };
+    const r = engine.resolveSkin(mine, lookup, 'light');
+    eq(r.tokens.accent, '#ff0000');
+    if (r.tokens['accent-hover'] === base.tokens['accent-hover']) throw new Error('accent-hover not derived');
+    eq(r.tokens['fi-link'], '#ff0000', 'links follow the accent');
+    eq(r.tokens.ok, '#00aa00', 'status follows the palette');
+    eq(r.tokens['fi-script'], '#00aa00', 'file icons follow the palette');
+    eq(r.tokens['term-green'], '#00aa00', 'terminal follows the palette');
+    eq(r.tokens.text, base.tokens.text, 'unrelated tokens keep the default');
+    eq(r.tokens['fi-dir'], base.tokens['fi-dir']);
+    const user = engine.resolveSkin(def, lookup, 'dark', { accent: '#00ff00', density: 'compact', listFontSize: 15, stripes: true, radius: 0 });
+    eq(user.tokens.accent, '#00ff00');
+    eq(user.tokens['accent-fg'], '#111318', 'readable text on a light accent');
+    eq(user.rowHeight, Math.round(15 * 1.5));
+    eq(user.classes, ['rc-stripes']);
+    eq([user.vars['--radius'], user.vars['--radius-panel']], ['0px', '0px']);
+  });
+
+  await test('skins: extends, variants and cycles', () => {
+    const child = { id: 'child', name: 'Child', extends: 'retro-blue', style: { stripes: true } };
+    eq(engine.variantsOf(child, lookup), ['dark'], 'inherits the variants of its base');
+    const r = engine.resolveSkin(child, lookup, 'light');
+    eq(r.scheme, 'dark', 'a dark-only skin stays dark');
+    eq(r.tokens.surface, '#0000a8');
+    eq(r.style.radius, 0);
+    eq(r.style.stripes, true);
+    const a = { id: 'a', name: 'A', extends: 'b', dark: { accent: '#111111' } };
+    const b = { id: 'b', name: 'B', extends: 'a' };
+    const cyc = new Map([['a', a], ['b', b], ['default', lookup('default')]]);
+    eq(engine.chainOf(a, (id) => cyc.get(id)).map((s) => s.id), ['default', 'b', 'a']);
+    eq(engine.resolveSkin(a, (id) => cyc.get(id), 'dark').tokens.accent, '#111111');
+    eq(engine.resolveSkin({ id: 'lost', name: 'Lost', extends: 'missing' }, lookup, 'light').tokens.bg, engine.resolveSkin(lookup('default'), lookup, 'light').tokens.bg, 'unknown base');
+  });
+
+  await test('skins: built-in skins are valid, complete and readable', () => {
+    const ids = BUILTIN_SKINS.map((s) => s.id);
+    for (const id of ['default', 'ember', 'graphite', 'retro-blue', 'high-contrast', 'nord', 'solarized', 'catppuccin', 'gruvbox', 'dracula']) if (!ids.includes(id)) throw new Error(`missing ${id}`);
+    const def = lookup('default');
+    for (const scheme of ['light', 'dark']) {
+      const missing = tokens.TOKENS.filter((t) => !t.optional && !(t.name in def[scheme])).map((t) => t.name);
+      if (missing.length) throw new Error(`default ${scheme} lacks ${missing.join(', ')}`);
+    }
+    const low = [];
+    for (const skin of BUILTIN_SKINS) {
+      for (const scheme of engine.variantsOf(skin, lookup)) {
+        const r = engine.resolveSkin(skin, lookup, scheme);
+        for (const c of engine.contrastReport(r)) if (!c.ok) low.push(`${skin.id}/${scheme}: ${c.what} ${c.ratio}`);
+      }
+    }
+    if (low.length) throw new Error(low.join('; '));
+  });
+
+  await test('skins: base.css matches the default skin, the schema matches the tokens', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync(join(root, 'src/styles/base.css'), 'utf8');
+    const block = (sel) => Object.fromEntries([...css.slice(css.indexOf(sel + ' {'), css.indexOf('}', css.indexOf(sel + ' {'))).matchAll(/--([\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
+    const def = lookup('default');
+    const diff = [];
+    for (const [scheme, sel] of [['light', ':root'], ['dark', ":root[data-theme='dark']"]]) {
+      for (const [k, v] of Object.entries(block(sel))) {
+        if (!tokens.TOKEN_MAP.has(k)) continue;
+        if (color.normalizeColor(v) !== null ? color.normalizeColor(v) !== def[scheme][k] : v !== def[scheme][k]) diff.push(`${scheme} ${k}: css ${v} ≠ skin ${def[scheme][k]}`);
+      }
+    }
+    if (diff.length) throw new Error(diff.join('; '));
+    const schema = JSON.parse(readFileSync(join(root, 'src/skins/skin.schema.json'), 'utf8'));
+    eq(Object.keys(schema.$defs.variant.properties), tokens.TOKENS.map((t) => t.name), 'run: node scripts/skins.mjs schema');
+  });
+
+  await test('skins: every token is documented', async () => {
+    const { readFileSync } = await import('node:fs');
+    const doc = readFileSync(join(root, '..', 'docs', 'src', 'reference', 'skin-tokens.md'), 'utf8');
+    const missing = tokens.TOKENS.filter((t) => !doc.includes('`' + t.name + '`')).map((t) => t.name);
+    if (missing.length) throw new Error(`not in docs/src/reference/skin-tokens.md: ${missing.join(', ')}`);
+  });
 } finally {
   await vite.close();
 }

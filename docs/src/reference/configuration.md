@@ -21,6 +21,7 @@ containers (`/config`).
 | `known_hosts.json` | Trusted SSH host keys and TLS certificates |
 | `bookmarks.json` | Bookmarks |
 | `commands.json` | Custom commands |
+| `skins/*.json` | Your [skins](../guide/skins.md#the-skins-folder), one file per skin |
 | `vault.json` | Master password settings (when a master password has been set) |
 | `vault.key` | Vault key when no master password is set (readable only by the user) |
 | `server.json` | Web login password (Argon2 hash) |
@@ -50,7 +51,8 @@ system's temporary folder.
 
 | Tab | Settings |
 |---|---|
-| General | Language, theme, [keyboard layout](keyboard-shortcuts.md) (Norton Commander, Total Commander, Rust Commander) and function key bar, hidden files, size format, what double-click / Enter does on a file (edit, open with the default application, copy to the other panel), confirmations before deleting and overwriting, moving deleted local files to the trash, whether the copy/move dialog is shown |
+| General | Language, [keyboard layout](keyboard-shortcuts.md) (Norton Commander, Total Commander, Rust Commander) and function key bar, hidden files, size format, what double-click / Enter does on a file (edit, open with the default application, copy to the other panel), confirmations before deleting and overwriting, moving deleted local files to the trash, whether the copy/move dialog is shown |
+| Appearance | Theme (system, light, dark), [skin](../guide/skins.md) and adjustments (accent color, row height, list font size, corner radius, striped rows, fonts), the skins folder |
 | Transfer | Default transfer settings, number of parallel jobs, reconnecting the sessions and continuing the jobs of the last run |
 | Editor | Show problems, format when saving, line width for formatting, tab width, word wrap |
 | Terminal | Font family, font size, scrollback lines |

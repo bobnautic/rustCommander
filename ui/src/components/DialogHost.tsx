@@ -37,6 +37,7 @@ const registry: Registry = {
   diff: lazy(() => import('./dialogs/DiffDialog')),
   fingerprint: lazy(() => import('./dialogs/FingerprintDialog')),
   openFile: lazy(() => import('./dialogs/OpenFileDialog')),
+  skinEditor: lazy(() => import('./dialogs/SkinEditor')),
 };
 
 export function DialogHost() {

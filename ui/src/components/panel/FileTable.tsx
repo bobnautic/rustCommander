@@ -11,6 +11,7 @@ import { load, save } from '../../lib/storage';
 import { quickSearchChar } from '../../lib/keymaps';
 import { activeKeymap } from '../../actions/shortcuts';
 import { setActiveSide, useApp } from '../../store/app';
+import { useSkins } from '../../store/skins';
 import {
   allRows, extendRange, goHome, goUp, invertSelection, other, PARENT, patchPanel, refresh, selectAll, selectNone, selectRange,
   setCursor, setSort, toggleSelected, usePanels, type CompareMark, type Side, type SortKey,
@@ -39,15 +40,18 @@ function setColWidth(col: Col, w: number) {
 
 const coarse = window.matchMedia('(pointer: coarse)');
 
-function useRowHeight(): number {
+/** Row height from the skin (density, font size); touch screens get finger-sized rows. */
+function useRowHeight(): { rowH: number; touch: boolean } {
   const narrow = useApp((s) => s.narrow);
+  const skinRowH = useSkins((s) => s.current.rowHeight);
   const [isCoarse, setCoarse] = useState(coarse.matches);
   useEffect(() => {
     const fn = (e: MediaQueryListEvent) => setCoarse(e.matches);
     coarse.addEventListener('change', fn);
     return () => coarse.removeEventListener('change', fn);
   }, []);
-  return narrow || isCoarse ? 34 : 22;
+  const touch = narrow || isCoarse;
+  return { rowH: touch ? Math.max(34, skinRowH) : skinRowH, touch };
 }
 
 export function typeLabel(e: FileEntry, t: TFn): string {
@@ -75,17 +79,19 @@ interface RowProps {
   dragging: boolean;
   sizeFormat: 'auto' | 'bytes';
   side: Side;
+  /** Odd row index (striped rows). */
+  odd: boolean;
   t: TFn;
 }
 
-const Row = memo(function Row({ entry: e, top, cursor, selected, renaming, cmp, dropTarget, dragging, sizeFormat, side, t }: RowProps) {
+const Row = memo(function Row({ entry: e, top, cursor, selected, renaming, cmp, dropTarget, dragging, sizeFormat, side, odd, t }: RowProps) {
   const parent = e.name === PARENT;
   const cat = parent ? 'dir' : categoryOf(e);
   const Icon = parent ? CornerLeftUp : CATEGORY_ICON[cat];
   const dirLike = parent || isDirLike(e);
   return (
     <div
-      className={cx('ft-row', cursor && 'cursor', selected && 'selected', e.hidden && 'is-hidden', cmp && `cmp-${cmp}`, dropTarget && 'drop-target', dragging && 'dragging', dirLike && 'is-dir')}
+      className={cx('ft-row', odd && 'odd', cursor && 'cursor', selected && 'selected', e.hidden && 'is-hidden', cmp && `cmp-${cmp}`, dropTarget && 'drop-target', dragging && 'dragging', dirLike && 'is-dir')}
       style={{ transform: `translateY(${top}px)` }}
       data-name={e.name}
       role="row"
@@ -196,7 +202,7 @@ export function FileTable({ side, active }: { side: Side; active: boolean }) {
   const sizeFormat = useApp((s) => s.settings?.sizeFormat ?? 'auto');
   const webUi = useApp((s) => s.info?.mode === 'web');
   const widths = useColumns((s) => s.widths);
-  const rowH = useRowHeight();
+  const { rowH, touch } = useRowHeight();
   const bodyRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewH, setViewH] = useState(400);
@@ -293,7 +299,7 @@ export function FileTable({ side, active }: { side: Side; active: boolean }) {
     }
     const name = entry.name;
     // touch screens have no Ctrl key: tapping the icon toggles the selection
-    if (rowH > 30 && name !== PARENT && (e.target as HTMLElement).closest('.fi')) {
+    if (touch && name !== PARENT && (e.target as HTMLElement).closest('.fi')) {
       toggleSelected(side, name);
       patchPanel(side, { cursor: name });
       return;
@@ -309,13 +315,13 @@ export function FileTable({ side, active }: { side: Side; active: boolean }) {
       return;
     }
     patchPanel(side, { cursor: name, anchor: name, selected: new Set() });
-    if (rowH > 30 && (name === PARENT || isDirLike(entry))) ops.openEntry(side, entry);
+    if (touch && (name === PARENT || isDirLike(entry))) ops.openEntry(side, entry);
   };
 
   const onDoubleClick = (e: MouseEvent) => {
     const entry = rowFromEvent(e);
     if (!entry || e.shiftKey || e.ctrlKey || e.metaKey) return;
-    if (rowH > 30 && (entry.name === PARENT || isDirLike(entry))) return;
+    if (touch && (entry.name === PARENT || isDirLike(entry))) return;
     ops.openEntry(side, entry);
   };
 
@@ -563,6 +569,7 @@ export function FileTable({ side, active }: { side: Side; active: boolean }) {
                 dragging={!!draggedHere && draggedHere.includes(r.name)}
                 sizeFormat={sizeFormat}
                 side={side}
+                odd={(first + i) % 2 === 1}
                 t={t}
               />
             ))}

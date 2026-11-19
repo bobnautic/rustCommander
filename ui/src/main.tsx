@@ -7,6 +7,7 @@ import './styles/panel.css';
 import './styles/dialogs.css';
 import './styles/dock.css';
 import './styles/editor.css';
+import './styles/skins.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

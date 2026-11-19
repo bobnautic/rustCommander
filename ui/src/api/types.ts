@@ -416,9 +416,27 @@ export interface ServerStatus {
   error?: string | null;
 }
 
+/** The look: a skin plus the user's adjustments (`null` = what the skin says). */
+export interface AppearanceSettings {
+  /** Built-in skin id or a user skin (file in `<config dir>/skins/`). */
+  skin: string;
+  accent?: string | null;
+  density?: 'compact' | 'normal' | 'comfortable' | null;
+  listFontSize?: number | null;
+  radius?: number | null;
+  stripes?: boolean | null;
+  fontUi?: string | null;
+  fontMono?: string | null;
+}
+
+/** A skin file in the skins folder (content checked by lib/skins/engine.ts). */
+export interface SkinFile { file: string; skin: unknown }
+
 export interface Settings {
   language: 'auto' | 'en' | 'de';
+  /** Which variant of the skin: follow the system, or always light / dark. */
   theme: 'system' | 'light' | 'dark';
+  appearance: AppearanceSettings;
   showHidden: boolean;
   confirmDelete: boolean;
   confirmOverwrite: boolean;
@@ -485,6 +503,12 @@ export interface RpcMethods {
 
   'settings.get': [Empty, Settings];
   'settings.set': [{ settings: Settings }, Settings];
+
+  /** User skins: the JSON files in `<config dir>/skins/` (`dir`), and files that could not be read. */
+  'skins.list': [Empty, { dir: string; skins: SkinFile[]; errors: { file: string; message: string }[] }];
+  /** Create or replace a user skin (by its `id`). */
+  'skins.save': [{ skin: unknown }, SkinFile];
+  'skins.delete': [{ id: string }, null];
 
   'vault.status': [Empty, VaultStatus];
   'vault.unlock': [{ password: string }, VaultStatus];
@@ -671,6 +695,8 @@ export interface RpcEvents {
   /** A directory changed because of an operation; panels showing it should refresh. */
   'fs.changed': { session: string; path: string };
   'log': LogEntry;
+  /** A user skin was saved or deleted (possibly by another client). */
+  'skins.changed': { id: string };
   /** Events were dropped because this client fell behind: reload the state. */
   'resync': null;
 }

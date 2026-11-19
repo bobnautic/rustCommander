@@ -89,11 +89,52 @@ impl Default for TerminalSettings {
     }
 }
 
+/// Look of the user interface: a skin plus the user's own adjustments on top of it.
+/// `None` = what the skin says.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AppearanceSettings {
+    /// Id of a built-in skin or of a file in `<config dir>/skins/`. Unknown ids fall back
+    /// to "default".
+    pub skin: String,
+    /// Accent color (CSS color), for both the light and the dark variant.
+    pub accent: Option<String>,
+    /// File list density: "compact", "normal" or "comfortable".
+    pub density: Option<String>,
+    /// Font size of the file lists in pixels.
+    pub list_font_size: Option<u32>,
+    /// Corner radius of controls in pixels.
+    pub radius: Option<u32>,
+    /// Alternating row backgrounds in the file lists.
+    pub stripes: Option<bool>,
+    /// Font of the user interface (CSS font-family).
+    pub font_ui: Option<String>,
+    /// Monospaced font (paths, editor, permissions).
+    pub font_mono: Option<String>,
+}
+
+impl Default for AppearanceSettings {
+    fn default() -> Self {
+        AppearanceSettings {
+            skin: "default".into(),
+            accent: None,
+            density: None,
+            list_font_size: None,
+            radius: None,
+            stripes: None,
+            font_ui: None,
+            font_mono: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub language: String,
+    /// "system", "light" or "dark": which variant of the skin to show.
     pub theme: String,
+    pub appearance: AppearanceSettings,
     pub show_hidden: bool,
     pub confirm_delete: bool,
     pub confirm_overwrite: bool,
@@ -123,6 +164,7 @@ impl Default for Settings {
         Settings {
             language: "auto".into(),
             theme: "system".into(),
+            appearance: AppearanceSettings::default(),
             show_hidden: false,
             confirm_delete: true,
             confirm_overwrite: true,
@@ -161,5 +203,21 @@ mod tests {
         let v = serde_json::to_value(&s).unwrap();
         assert_eq!(v["keymap"], "total");
         assert_eq!(v["showKeyBar"], false);
+    }
+
+    #[test]
+    fn appearance_defaults_to_the_default_skin() {
+        let s: Settings = serde_json::from_str(r#"{ "theme": "dark" }"#).unwrap();
+        assert_eq!(s.appearance.skin, "default");
+        assert!(s.appearance.accent.is_none());
+
+        let s: Settings =
+            serde_json::from_str(r##"{ "appearance": { "skin": "nord", "accent": "#ff8800", "stripes": true } }"##)
+                .unwrap();
+        assert_eq!(s.appearance.skin, "nord");
+        assert_eq!(s.appearance.accent.as_deref(), Some("#ff8800"));
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["appearance"]["stripes"], true);
+        assert_eq!(v["appearance"]["listFontSize"], serde_json::Value::Null);
     }
 }

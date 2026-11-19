@@ -13,6 +13,7 @@ import { lintSource } from '../../lib/editor/lint';
 import { useApp } from '../../store/app';
 import { getContent, getOriginal, setContent, setTabOptions, useEditorStatus, useEditors, type EditorTab } from '../../store/editors';
 import { formatDocument, registerView, saveWithFormat, useEditorZoom, viewOf, zoomEditor } from './editorActions';
+import { skinEditorTheme } from '../../lib/editor/skinTheme';
 
 export interface ViewOptions {
   wrap: boolean;
@@ -138,7 +139,7 @@ export function TextEditor({ tab, active, options, onOpenFile }: { tab: EditorTa
       height="100%"
       className="cm-host"
       style={{ fontSize: Math.max(8, (settings?.fontSize ?? 13) + zoom) }}
-      theme={theme === 'dark' ? 'dark' : 'light'}
+      theme={skinEditorTheme(theme)}
       extensions={extensions}
       autoFocus={active}
       basicSetup={{ highlightActiveLine: !tab.readOnly, foldGutter: true, searchKeymap: true, tabSize: tab.indent.size }}

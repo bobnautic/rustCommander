@@ -12,6 +12,7 @@ import { adoptTerminals, onTerminalData, onTerminalExit } from '../store/termina
 import { toast } from '../store/toasts';
 import { openDialog } from '../store/dialogs';
 import { onJobForUndo } from './undo';
+import { reloadSkins } from '../store/skins';
 
 let subscribed = false;
 
@@ -77,6 +78,7 @@ export function subscribeEvents() {
     explorerFsChanged(session, path);
   });
   on('log', (e) => appendLog(e));
+  on('skins.changed', () => void reloadSkins());
   on('resync', () => void loadState(false));
   onReconnected(() => {
     void loadState(false);
@@ -105,6 +107,7 @@ export async function loadState(initial: boolean) {
   if (info.status === 'rejected') throw info.reason;
   useApp.setState({ info: info.value });
   if (settings.status === 'fulfilled') applySettings(settings.value);
+  void reloadSkins();
   if (vault.status === 'fulfilled') useApp.setState({ vault: vault.value });
   if (jobs.status === 'fulfilled') setJobs(jobs.value);
   if (prompts.status === 'fulfilled') {
