@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { ExecOutput, FileEntry, Peer, SiteConfig, SyncPlan, TransferOptions } from '../api/types';
 import type { Side } from './panels';
+import type { Skin } from '../lib/skins/engine';
 
 export interface ConfirmProps {
   title: string;
@@ -89,6 +90,8 @@ export interface DialogPropsMap {
   diff: { left: DiffSide; right: DiffSide; title?: string; top?: boolean };
   fingerprint: FingerprintProps;
   openFile: { session?: string; dir?: string };
+  /** Edit a user skin (`skin`) or create one based on `base`; `onSaved` gets the id. */
+  skinEditor: { skin?: Skin; base?: string; onSaved?: (id: string, use: boolean) => void };
 }
 
 export type DialogKind = keyof DialogPropsMap;

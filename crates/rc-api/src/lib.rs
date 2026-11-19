@@ -13,6 +13,7 @@ pub mod persist;
 pub mod prompts;
 pub mod server;
 pub mod settings;
+pub mod skins;
 pub mod state;
 
 pub use dispatch::{dispatch, RpcError};

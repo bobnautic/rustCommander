@@ -6,7 +6,7 @@
   flex: none;
   margin: 0 6px 6px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: var(--radius-panel);
   background: var(--surface);
   box-shadow: var(--shadow);
   overflow: visible;
@@ -21,11 +21,11 @@
   height: 34px;
   padding: 0 4px 0 5px;
   background: var(--surface-2);
-  border-radius: 9px;
+  border-radius: var(--radius-panel);
 }
-.dock.open .dock-head { border-bottom: 1px solid var(--border); border-radius: 9px 9px 0 0; }
+.dock.open .dock-head { border-bottom: 1px solid var(--border); border-radius: var(--radius-panel) var(--radius-panel) 0 0; }
 .dock-tabs .tab.on { background: var(--surface); }
-.dock-body { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; border-radius: 0 0 9px 9px; }
+.dock-body { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; border-radius: 0 0 var(--radius-panel) var(--radius-panel); }
 .dock-toolbar {
   display: flex;
   align-items: center;
@@ -128,10 +128,10 @@
 .term-tab:hover { background: var(--surface-3); }
 .term-tab.on { background: var(--accent-weak-2); color: var(--text); font-weight: 500; }
 .term-tab.exited { color: var(--faint); text-decoration: line-through; }
-.term-tab-close { display: inline-flex; padding: 3px; border-radius: 4px; color: var(--muted); }
+.term-tab-close { display: inline-flex; padding: 3px; border-radius: min(4px, var(--radius)); color: var(--muted); }
 .term-tab-close:hover { background: var(--border); color: var(--text); }
 .term-hint { font-family: var(--mono); font-size: 11.5px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.term-panes { position: relative; flex: 1; min-height: 0; background: var(--term-bg); border-radius: 0 0 9px 9px; }
+.term-panes { position: relative; flex: 1; min-height: 0; background: var(--term-bg); border-radius: 0 0 var(--radius-panel) var(--radius-panel); }
 .term-pane { position: absolute; inset: 6px 4px 4px 10px; }
 .term-pane.hidden { visibility: hidden; pointer-events: none; }
 .term-host { width: 100%; height: 100%; }

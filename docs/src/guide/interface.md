@@ -48,11 +48,13 @@ app you can also drop files from your operating system's file manager.
 bookmark list, the "directory hotlist"). Bookmarks can apply to the local file system, to a
 single site or to every session (for example `/var/log/nginx`).
 
-## Themes and languages
+## Skins, themes and languages
 
 The theme follows your system by default; *View* → **Theme** or the toolbar button
-switches between system, light and dark. The interface is available in English and German
-(*View* → **Language** or **Preferences**, Ctrl+,).
+switches between system, light and dark. *View* → **Skin** changes the whole look — ten
+skins are built in (from the standard look to *Retro Blue*, *Nord* or *High Contrast*), and
+you can adjust them or create your own: see [Skins and appearance](skins.md). The interface is
+available in English and German (*View* → **Language** or **Preferences**, Ctrl+,).
 
 On narrow screens — for example the [web mode](web-mode.md) on a phone — the layout shows
 one panel at a time with a switcher.

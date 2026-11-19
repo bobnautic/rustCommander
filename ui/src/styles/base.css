@@ -4,6 +4,8 @@
   --mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   --radius: 6px;
   --radius-lg: 10px;
+  --radius-panel: 9px;
+  --list-font-size: 13px;
   --brand: #e2672f;
 
   --bg: #eef0f3;
@@ -42,6 +44,7 @@
   --shadow-lg: 0 18px 50px rgba(16, 24, 40, 0.22), 0 4px 12px rgba(16, 24, 40, 0.1);
   --backdrop: rgba(17, 24, 39, 0.36);
   --term-bg: #fbfbfc;
+  --row-alt: #f8f9fa;
 
   --fi-file: #8a929d;
   --fi-dir: #d39c12;
@@ -103,6 +106,7 @@
   --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.35);
   --backdrop: rgba(0, 0, 0, 0.5);
   --term-bg: #121417;
+  --row-alt: #202328;
 
   --fi-file: #8a929d;
   --fi-dir: #e3b341;
@@ -207,7 +211,7 @@ pre {
 }
 ::-webkit-scrollbar-thumb {
   background: var(--scroll);
-  border-radius: 8px;
+  border-radius: min(8px, var(--radius-panel));
   border: 2px solid transparent;
   background-clip: content-box;
 }
@@ -321,9 +325,9 @@ pre {
   min-width: 14px;
   height: 14px;
   padding: 0 3px;
-  border-radius: 7px;
+  border-radius: min(7px, var(--radius-panel));
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
   font-size: 9.5px;
   font-weight: 700;
   line-height: 14px;
@@ -404,7 +408,7 @@ pre {
   gap: 2px;
   padding: 2px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: min(7px, var(--radius-panel));
   background: var(--surface-3);
   max-width: 100%;
   overflow-x: auto;
@@ -415,7 +419,7 @@ pre {
   gap: 5px;
   height: 25px;
   padding: 0 11px;
-  border-radius: 5px;
+  border-radius: min(5px, var(--radius));
   color: var(--text-2);
   font-size: 12.5px;
   white-space: nowrap;
@@ -424,7 +428,7 @@ pre {
 .segmented button.on { background: var(--surface); color: var(--text); font-weight: 500; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14); }
 .segmented-sm button { height: 22px; padding: 0 9px; }
 
-.collapsible { border: 1px solid var(--border); border-radius: 8px; }
+.collapsible { border: 1px solid var(--border); border-radius: min(8px, var(--radius-panel)); }
 .collapsible-head {
   display: flex;
   align-items: center;
@@ -435,7 +439,7 @@ pre {
   font-weight: 600;
   text-align: left;
   color: var(--text);
-  border-radius: 8px;
+  border-radius: min(8px, var(--radius-panel));
 }
 .collapsible-head:hover { background: var(--surface-2); }
 .collapsible-caret { transition: transform 0.15s; color: var(--muted); flex: none; }
@@ -465,14 +469,14 @@ pre {
   min-width: 17px;
   height: 17px;
   padding: 0 5px;
-  border-radius: 9px;
+  border-radius: var(--radius-panel);
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
   font-size: 10.5px;
   font-weight: 700;
 }
-.tab-count.warn { background: var(--warn); }
-.tab-count.err { background: var(--err); }
+.tab-count.warn { background: var(--warn); color: #fff; }
+.tab-count.err { background: var(--err); color: #fff; }
 
 .badge {
   display: inline-flex;
@@ -480,7 +484,7 @@ pre {
   gap: 3px;
   height: 18px;
   padding: 0 7px;
-  border-radius: 9px;
+  border-radius: var(--radius-panel);
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
@@ -498,7 +502,7 @@ pre {
   padding: 1px 6px;
   border: 1px solid var(--border-strong);
   border-bottom-width: 2px;
-  border-radius: 5px;
+  border-radius: min(5px, var(--radius));
   background: var(--surface-2);
   font-family: var(--mono);
   font-size: 11.5px;
@@ -509,12 +513,12 @@ pre {
 .progress {
   position: relative;
   height: 6px;
-  border-radius: 3px;
+  border-radius: min(3px, var(--radius));
   background: var(--surface-3);
   overflow: hidden;
 }
 .progress-thin { height: 4px; }
-.progress-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.25s ease; }
+.progress-fill { height: 100%; border-radius: min(3px, var(--radius)); background: var(--accent); transition: width 0.25s ease; }
 .progress-ok .progress-fill { background: var(--ok); }
 .progress-warn .progress-fill { background: var(--warn); }
 .progress-err .progress-fill { background: var(--err); }

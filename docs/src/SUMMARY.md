@@ -22,6 +22,8 @@
 - [Terminal and SSH tunnels](guide/terminal-and-tunnels.md)
 - [LAN discovery and sharing](guide/lan-discovery.md)
 - [Web mode](guide/web-mode.md)
+- [Skins and appearance](guide/skins.md)
+  - [Creating skins](guide/creating-skins.md)
 
 # Reference
 
@@ -30,6 +32,7 @@
 - [Scripting](reference/scripting.md)
 - [File masks](reference/file-masks.md)
 - [Configuration files](reference/configuration.md)
+- [Skin tokens](reference/skin-tokens.md)
 
 # Deployment
 

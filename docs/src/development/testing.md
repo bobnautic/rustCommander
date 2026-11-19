@@ -28,14 +28,16 @@ service.
 
 ```bash
 npm --prefix ui run typecheck
-npm --prefix ui run test:unit     # language detection, JSON checks, formatters
+npm --prefix ui run test:unit     # language detection, JSON checks, formatters, skins
+node ui/scripts/skins.mjs check   # built-in skins: validity and contrast report
 npm --prefix ui test              # unit tests + Playwright smoke test
 ```
 
 The smoke test (`ui/tests/smoke.mjs`) builds the UI if needed, starts `vite preview` and
 drives the app against the demo backend (`?mock=1`): navigation, copying, the Site
 Manager and host-key prompt, synchronization, conflicts, properties, Nearby, the Remote
-Explorer, terminal, editor, fingerprints, drag and drop, web login and the mobile layout.
+Explorer, terminal, editor, skins and the skin editor, fingerprints, drag and drop, web
+login and the mobile layout.
 Its screenshots end up in `ui/tests/screenshots/`.
 
 ```bash

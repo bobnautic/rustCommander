@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ArrowLeftRight, Code2, Globe, KeyRound, Lock, Radar, Settings, Shield, SquareTerminal, Trash2, Search } from 'lucide-react';
+import { useEffect, useLayoutEffect, useState } from 'react';
+import { ArrowLeftRight, Code2, Globe, KeyRound, Lock, Palette, Radar, Settings, Shield, SquareTerminal, Trash2, Search } from 'lucide-react';
 import type { FormatterInfo, KnownHost, Settings as SettingsT } from '../../api/types';
 import { call } from '../../api/client';
 import { tr, useT } from '../../i18n';
@@ -13,8 +13,10 @@ import { attempt, toast } from '../../store/toasts';
 import { Badge, Button, Checkbox, Dialog, DialogButtons, Field, IconButton, NumberInput, Segmented, Select, Spinner, Tabs, TextInput, type TabDef } from '../ui';
 import { TransferOptionsForm } from './common';
 import { KEYMAP_IDS } from '../../lib/keymaps';
+import { endPreview, previewLook } from '../../store/skins';
+import { AppearancePane } from './Appearance';
 
-type Tab = 'general' | 'transfer' | 'discovery' | 'server' | 'editor' | 'terminal' | 'security';
+type Tab = 'general' | 'appearance' | 'transfer' | 'discovery' | 'server' | 'editor' | 'terminal' | 'security';
 
 /** Built-in formatters plus the ones found on the host. */
 function InstalledFormatters() {
@@ -173,6 +175,20 @@ export default function PreferencesDialog({ props, close }: { props: DialogProps
     if (!draft && settings) setDraft(structuredClone(settings));
   }, [settings, draft]);
 
+  // live preview of the look while the dialog is open
+  const lookKey = draft ? JSON.stringify([draft.theme, draft.appearance]) : '';
+  const savedKey = settings ? JSON.stringify([settings.theme, settings.appearance]) : '';
+  useEffect(() => {
+    if (!draft) return;
+    if (lookKey === savedKey) endPreview('prefs');
+    else previewLook('prefs', { theme: draft.theme, appearance: draft.appearance });
+  }, [lookKey, savedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => endPreview('prefs'), []);
+  // opened on a specific tab (View → Skin → Appearance…): focus that tab, not the first one
+  useLayoutEffect(() => {
+    if (props.tab) document.querySelector<HTMLElement>('.prefs-tabs .tab.on')?.focus({ preventScroll: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!draft) return null;
   const set = <K extends keyof SettingsT>(k: K, v: SettingsT[K]) => setDraft({ ...draft, [k]: v });
   const sub = <K extends 'discovery' | 'server' | 'editor' | 'terminal'>(k: K, patch: Partial<SettingsT[K]>) => setDraft({ ...draft, [k]: { ...draft[k], ...patch } });
@@ -181,6 +197,7 @@ export default function PreferencesDialog({ props, close }: { props: DialogProps
   const submit = async () => {
     setBusy(true);
     save('skipCopyDialog', skipCopy);
+    endPreview('prefs', false);
     const r = await saveSettings(draft);
     setBusy(false);
     if (r) {
@@ -191,6 +208,7 @@ export default function PreferencesDialog({ props, close }: { props: DialogProps
 
   const tabs: TabDef<Tab>[] = [
     { id: 'general', label: t('prefs.general'), icon: Settings },
+    { id: 'appearance', label: t('prefs.appearance'), icon: Palette },
     { id: 'transfer', label: t('prefs.transfer'), icon: ArrowLeftRight },
     { id: 'discovery', label: t('prefs.discovery'), icon: Radar },
     { id: 'server', label: t('prefs.server'), icon: Globe },
@@ -200,7 +218,7 @@ export default function PreferencesDialog({ props, close }: { props: DialogProps
   ];
 
   return (
-    <Dialog title={t('prefs.title')} icon={Settings} onClose={close} onSubmit={() => void submit()} width={820} height={600} bodyClassName="prefs-body" footer={<DialogButtons onCancel={close} okLabel={t('common.save')} busy={busy} />}>
+    <Dialog title={t('prefs.title')} icon={Settings} onClose={close} onSubmit={() => void submit()} width={900} height={640} bodyClassName="prefs-body" footer={<DialogButtons onCancel={close} okLabel={t('common.save')} busy={busy} />}>
       <Tabs tabs={tabs} value={tab} onChange={setTab} vertical={!narrow} className="prefs-tabs" />
       <div className="prefs-content" data-testid="prefs-content">
         {tab === 'general' && (
@@ -212,9 +230,6 @@ export default function PreferencesDialog({ props, close }: { props: DialogProps
                   <option value="en">English</option>
                   <option value="de">Deutsch</option>
                 </Select>
-              </Field>
-              <Field label={t('view.theme')}>
-                <Segmented value={draft.theme} onChange={(v) => set('theme', v)} options={[{ value: 'system', label: t('theme.system') }, { value: 'light', label: t('theme.light') }, { value: 'dark', label: t('theme.dark') }]} />
               </Field>
               <Field label={t('prefs.doubleClick')} hint={t('prefs.doubleClickHint')}>
                 <Select value={draft.doubleClickAction} onChange={(e) => set('doubleClickAction', e.target.value as SettingsT['doubleClickAction'])}>
@@ -246,6 +261,7 @@ export default function PreferencesDialog({ props, close }: { props: DialogProps
             </div>
           </div>
         )}
+        {tab === 'appearance' && <AppearancePane draft={draft} onChange={(patch) => setDraft({ ...draft, ...patch })} />}
         {tab === 'transfer' && (
           <div className="form-stack">
             <Field label={t('prefs.maxJobs')} hint={t('prefs.maxJobsHint')}>

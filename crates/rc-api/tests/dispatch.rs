@@ -411,3 +411,39 @@ async fn interrupted_jobs_and_sessions_survive_a_restart() {
     assert_eq!(sessions[0]["id"], "gone");
     st.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn skins_and_appearance() {
+    let (_dir, st) = state().await;
+
+    let settings = call(&st, "settings.get", Value::Null).await;
+    assert_eq!(settings["appearance"]["skin"], "default");
+    assert_eq!(settings["appearance"]["accent"], Value::Null);
+
+    let list = call(&st, "skins.list", Value::Null).await;
+    assert_eq!(list["skins"], json!([]));
+    assert!(list["dir"].as_str().unwrap().ends_with("skins"));
+
+    let mut events = st.events.subscribe();
+    let skin = json!({ "id": "ocean", "name": "Ocean", "dark": { "accent": "#00aaff" } });
+    let saved = call(&st, "skins.save", json!({ "skin": skin })).await;
+    assert_eq!(saved["file"], "ocean.json");
+    let ev = events.recv().await.unwrap();
+    assert_eq!(ev.name, "skins.changed");
+
+    let list = call(&st, "skins.list", Value::Null).await;
+    assert_eq!(list["skins"][0]["skin"]["dark"]["accent"], "#00aaff");
+
+    let bad = dispatch(&st, &Origin::Desktop, "skins.save", json!({ "skin": { "id": "../x", "name": "x" } })).await;
+    assert_eq!(bad.unwrap_err().code, "invalid_input");
+
+    let mut settings = settings;
+    settings["appearance"]["skin"] = json!("ocean");
+    settings["appearance"]["density"] = json!("compact");
+    let saved = call(&st, "settings.set", json!({ "settings": settings })).await;
+    assert_eq!(saved["appearance"]["skin"], "ocean");
+    assert_eq!(saved["appearance"]["density"], "compact");
+
+    call(&st, "skins.delete", json!({ "id": "ocean" })).await;
+    assert_eq!(call(&st, "skins.list", Value::Null).await["skins"], json!([]));
+}

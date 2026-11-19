@@ -435,6 +435,7 @@ function defaultSettings(): T.Settings {
   return {
     language: 'auto',
     theme: 'system',
+    appearance: { skin: 'default', accent: null, density: null, listFontSize: null, radius: null, stripes: null, fontUi: null, fontMono: null },
     showHidden: false,
     confirmDelete: true,
     confirmOverwrite: true,
@@ -608,6 +609,19 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
     { id: 'bm3', name: 'Web root', scope: 'site-web01', path: '/var/www/html' },
     { id: 'bm4', name: 'nginx logs', scope: '*', path: '/var/log/nginx' },
   ];
+
+  /** User skins (the skins folder); one example so the gallery shows how they look. */
+  const userSkins: Record<string, Dict> = {
+    lagoon: {
+      id: 'lagoon',
+      name: 'Lagoon',
+      author: 'demo',
+      description: 'A user skin: the default look with a teal accent and striped rows.',
+      style: { stripes: true, radius: 8 },
+      light: { accent: '#0e8a8a' },
+      dark: { accent: '#3cc7c0', bg: '#0d1517', chrome: '#111c1f', surface: '#152226' },
+    },
+  };
 
   let commands: T.CustomCommand[] = [
     { id: 'cmd1', name: 'Disk usage', command: 'du -sh !&', perFile: false, target: 'session', showOutput: true, refresh: false },
@@ -2284,6 +2298,26 @@ export function createMockBackend(emit: Emit, opts: MockOptions): MockBackend {
     },
     'bookmarks.delete': (p) => {
       bookmarks = bookmarks.filter((x) => x.id !== p.id);
+      return null;
+    },
+
+    'skins.list': () => ({
+      dir: '/home/demo/.config/rust-commander/skins',
+      skins: Object.entries(userSkins).map(([id, skin]) => ({ file: `${id}.json`, skin: deepClone(skin) })),
+      errors: [],
+    }),
+    'skins.save': (p) => {
+      const skin = deepClone(p.skin) as Dict;
+      const id = String(skin?.id ?? '');
+      if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id)) fail('invalid_input', `invalid skin id "${id}"`);
+      if (!String(skin.name ?? '').trim()) fail('invalid_input', 'a skin needs a name');
+      userSkins[id] = skin;
+      emit('skins.changed', { id });
+      return { file: `${id}.json`, skin: deepClone(skin) };
+    },
+    'skins.delete': (p) => {
+      delete userSkins[String(p.id)];
+      emit('skins.changed', { id: String(p.id) });
       return null;
     },
 

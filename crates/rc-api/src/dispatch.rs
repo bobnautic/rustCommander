@@ -18,6 +18,7 @@ use rc_core::{Error, Protocol};
 use crate::handlers::{compare, discovery, edit, explorer, format, fs, jobs, misc, sessions, terminal};
 use crate::server::ServerStatus;
 use crate::settings::Settings;
+use crate::skins;
 use crate::state::{AppState, Bookmark, CustomCommand, Origin};
 
 /// Error returned to the UI.
@@ -539,6 +540,25 @@ pub async fn dispatch(state: &Arc<AppState>, origin: &Origin, method: &str, para
             ok(Value::Null)
         }
         "commands.run" => ok(misc::command_run(st, origin, parse(params)?).await?),
+
+        // ---------------------------------------------------------- skins
+        "skins.list" => ok(skins::list(&skins::skins_dir(&st.config_dir))),
+        "skins.save" => {
+            #[derive(Deserialize)]
+            struct P {
+                skin: Value,
+            }
+            let p: P = parse(params)?;
+            let saved = skins::save(&skins::skins_dir(&st.config_dir), p.skin)?;
+            st.events.emit("skins.changed", json!({ "id": saved.skin["id"] }));
+            ok(saved)
+        }
+        "skins.delete" => {
+            let p: Id = parse(params)?;
+            skins::delete(&skins::skins_dir(&st.config_dir), &p.id)?;
+            st.events.emit("skins.changed", json!({ "id": p.id }));
+            ok(Value::Null)
+        }
 
         // ---------------------------------------------------------- external editing
         "edit.external" => {

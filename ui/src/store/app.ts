@@ -4,6 +4,7 @@ import { call } from '../api/client';
 import { applyLanguage } from '../i18n';
 import { load, save, saveRaw } from '../lib/storage';
 import { toast } from './toasts';
+import { applyLook } from './skins';
 
 export type DockTab = 'queue' | 'terminal' | 'log' | 'search';
 export type Side = 'left' | 'right';
@@ -48,7 +49,6 @@ const defaultLayout: Layout = {
 const savedLayout = { ...defaultLayout, ...load<Partial<Layout>>('layout', {}) };
 
 const narrowQuery = window.matchMedia('(max-width: 799px)');
-const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
 export const useApp = create<AppStore>(() => ({
   ...savedLayout,
@@ -102,24 +102,12 @@ export function setActiveSide(side: Side) {
   if (useApp.getState().activeSide !== side) useApp.setState({ activeSide: side });
 }
 
-// ---------------------------------------------------------------- theme
-
-function applyTheme(theme: Settings['theme']) {
-  saveRaw('theme', theme);
-  const dark = theme === 'dark' || (theme === 'system' && darkQuery.matches);
-  const resolved = dark ? 'dark' : 'light';
-  document.documentElement.dataset.theme = resolved;
-  if (useApp.getState().resolvedTheme !== resolved) useApp.setState({ resolvedTheme: resolved });
-}
-
-darkQuery.addEventListener('change', () => {
-  const t = useApp.getState().settings?.theme ?? 'system';
-  applyTheme(t);
-});
+// ---------------------------------------------------------------- theme and skin
 
 export function applySettings(s: Settings) {
   useApp.setState({ settings: s });
-  applyTheme(s.theme);
+  saveRaw('theme', s.theme);
+  applyLook(s);
   applyLanguage(s.language);
 }
 
@@ -150,6 +138,10 @@ export function toggleHidden() {
 
 export function setTheme(theme: Settings['theme']) {
   void patchSettings((s) => ({ ...s, theme }));
+}
+
+export function setSkin(id: string) {
+  void patchSettings((s) => ({ ...s, appearance: { ...(s.appearance ?? { skin: 'default' }), skin: id } }));
 }
 
 export function cycleTheme() {

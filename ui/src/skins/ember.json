@@ -1,0 +1,53 @@
+{
+  "$schema": "./skin.schema.json",
+  "id": "ember",
+  "name": "Ember",
+  "description": "Warm stone grays with a rust-orange accent — Rust Commander's own colors.",
+  "author": "Rust Commander",
+  "version": "1.0.0",
+  "license": "MIT",
+  "style": {
+    "radius": 7,
+    "panelRadius": 11
+  },
+  "light": {
+    "red": "#c0362c",
+    "orange": "#d9620f",
+    "yellow": "#b7791f",
+    "green": "#3f7d3a",
+    "teal": "#2a8577",
+    "cyan": "#1f7f99",
+    "blue": "#3b6fb6",
+    "purple": "#8a4fbf",
+    "pink": "#b8467a",
+    "bg": "#ede8e3",
+    "chrome": "#f5f1ed",
+    "surface": "#fffdfb",
+    "backdrop": "rgba(41, 28, 20, 0.36)",
+    "shadow": "0 1px 2px rgba(60, 35, 20, 0.07), 0 1px 3px rgba(60, 35, 20, 0.09)",
+    "shadow-lg": "0 18px 50px rgba(60, 35, 20, 0.22), 0 4px 12px rgba(60, 35, 20, 0.1)",
+    "text": "#2a211c",
+    "accent": "#c2410c",
+    "term-bg": "#fbf8f5"
+  },
+  "dark": {
+    "red": "#f07167",
+    "orange": "#fb923c",
+    "yellow": "#f5b942",
+    "green": "#8cc265",
+    "teal": "#5ec2b0",
+    "cyan": "#5bb8d6",
+    "blue": "#7aa7e8",
+    "purple": "#c49ae8",
+    "pink": "#f08bb5",
+    "bg": "#15110f",
+    "chrome": "#1b1714",
+    "surface": "#221c18",
+    "backdrop": "rgba(0, 0, 0, 0.5)",
+    "shadow": "0 1px 2px rgba(0, 0, 0, 0.35)",
+    "shadow-lg": "0 20px 60px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.35)",
+    "text": "#f0e7df",
+    "accent": "#f97316",
+    "accent-fg": "#1b1410"
+  }
+}
