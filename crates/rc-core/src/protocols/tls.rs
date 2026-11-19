@@ -201,9 +201,9 @@ fn describe(cert: &CertificateDer<'_>) -> CertDescription {
     use x509_cert::der::Decode;
     match x509_cert::Certificate::from_der(cert.as_ref()) {
         Ok(c) => CertDescription {
-            subject: c.tbs_certificate.subject.to_string(),
-            issuer: c.tbs_certificate.issuer.to_string(),
-            not_after: c.tbs_certificate.validity.not_after.to_string(),
+            subject: c.tbs_certificate().subject().to_string(),
+            issuer: c.tbs_certificate().issuer().to_string(),
+            not_after: c.tbs_certificate().validity().not_after.to_string(),
         },
         Err(e) => CertDescription {
             subject: format!("(unparsable certificate: {e})"),
