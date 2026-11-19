@@ -44,7 +44,8 @@ app you can also drop files from your operating system's file manager.
 
 ## Bookmarks
 
-**Ctrl+D** bookmarks the current folder. Bookmarks can apply to the local file system, to a
+**Ctrl+D** bookmarks the current folder (in the Total Commander layout it opens the
+bookmark list, the "directory hotlist"). Bookmarks can apply to the local file system, to a
 single site or to every session (for example `/var/log/nginx`).
 
 ## Themes and languages

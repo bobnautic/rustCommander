@@ -10,6 +10,7 @@ import { openDialog } from '../../store/dialogs';
 import { getPanel, PARENT, refresh, selectAll, targets, type Side } from '../../store/panels';
 import * as ops from '../../actions/fileOps';
 import type { MenuItem } from '../Menu';
+import { shortcutLabel as sc } from '../../actions/shortcuts';
 
 export function commandsSubmenu(side: Side): MenuItem[] {
   const cmds = useApp.getState().commands;
@@ -35,21 +36,21 @@ export function buildPanelMenu(side: Side, entry: FileEntry | null): MenuItem[] 
 
   if (!entry || isParent) {
     return [
-      { label: tr('ops.newFolder'), icon: FolderPlus, shortcut: 'F7', onClick: () => void ops.makeDir(side) },
-      { label: tr('ops.newFile'), icon: FilePlus, shortcut: 'Shift+F4', onClick: () => void ops.newFile(side) },
+      { label: tr('ops.newFolder'), icon: FolderPlus, shortcut: sc('mkdir'), onClick: () => void ops.makeDir(side) },
+      { label: tr('ops.newFile'), icon: FilePlus, shortcut: sc('newFile'), onClick: () => void ops.newFile(side) },
       { label: tr('ops.createLink'), icon: Link2, hidden: !caps?.symlinks, onClick: () => ops.createSymlink(side) },
       { separator: true },
       { label: tr('web.upload'), icon: Upload, hidden: !web, onClick: () => void ops.uploadFromComputer(side) },
       { label: tr('web.uploadFolder'), icon: FolderInput, hidden: !web, onClick: () => void ops.uploadFromComputer(side, true) },
       { separator: true },
-      { label: tr('common.refresh'), icon: RefreshCw, shortcut: 'Ctrl+R', onClick: () => void refresh(side) },
+      { label: tr('common.refresh'), icon: RefreshCw, shortcut: sc('refresh'), onClick: () => void refresh(side) },
       { label: tr('panel.selectAll'), icon: ListChecks, shortcut: 'Ctrl+A', onClick: () => selectAll(side) },
       { label: tr('ops.copyPath'), icon: ClipboardCopy, onClick: () => void ops.copyText(p.path) },
       { label: tr('ops.openTerminalHere'), icon: SquareTerminal, hidden: !info?.features.terminal, onClick: () => ops.openTerminalHere(side) },
       { label: tr('ops.openInFileManager'), icon: FolderOpen, hidden: !(desktop && isLocal && info?.features.openLocal), onClick: () => ops.openWithSystem(side) },
-      { label: tr('commands.title'), icon: Command, submenu: commandsSubmenu(side) },
+      { label: tr('commands.title'), icon: Command, shortcut: sc('userMenu'), submenu: commandsSubmenu(side) },
       { separator: true },
-      { label: tr('ops.properties'), icon: Info, shortcut: 'Alt+Enter', onClick: () => void ops.showProperties(side) },
+      { label: tr('ops.properties'), icon: Info, shortcut: sc('properties'), onClick: () => void ops.showProperties(side) },
     ];
   }
 
@@ -57,41 +58,41 @@ export function buildPanelMenu(side: Side, entry: FileEntry | null): MenuItem[] 
   const file = !dir;
   return [
     { label: tr('ops.open'), icon: FolderOpen, shortcut: 'Enter', hidden: multi, onClick: () => ops.openEntry(side, entry) },
-    { label: tr('ops.edit'), icon: Edit3, shortcut: 'F4', hidden: !file || multi, onClick: () => ops.editFocused(side) },
-    { label: tr('ops.view'), icon: Eye, shortcut: 'F3', hidden: !file || multi, onClick: () => ops.viewFocused(side) },
+    { label: tr('ops.edit'), icon: Edit3, shortcut: sc('edit'), hidden: !file || multi, onClick: () => ops.editFocused(side) },
+    { label: tr('ops.view'), icon: Eye, shortcut: sc('view'), hidden: !file || multi, onClick: () => ops.viewFocused(side) },
     { label: tr('ops.openWithSystem'), icon: ExternalLink, hidden: !(desktop && isLocal && info?.features.openLocal) || multi, onClick: () => ops.openWithSystem(side) },
     { label: tr('ops.editExternal'), icon: ExternalLink, hidden: !(desktop && !isLocal && info?.features.externalEdit) || !file || multi, onClick: () => void ops.externalEdit(side, entry) },
     { label: tr('web.openInBrowser'), icon: Globe, hidden: !web || !file || multi, onClick: () => void ops.openInBrowser(side) },
     { separator: true },
-    { label: tr('ops.copy'), icon: Copy, shortcut: 'F5', onClick: () => ops.copySelection(side, false) },
-    { label: tr('ops.move'), icon: MoveRight, shortcut: 'F6', onClick: () => ops.copySelection(side, true) },
+    { label: tr('ops.copy'), icon: Copy, shortcut: sc('copy'), onClick: () => ops.copySelection(side, false) },
+    { label: tr('ops.move'), icon: MoveRight, shortcut: sc('move'), onClick: () => ops.copySelection(side, true) },
     { label: tr('web.download'), icon: Download, hidden: !web, onClick: () => void ops.downloadToComputer(side) },
     { separator: true },
-    { label: tr('ops.rename'), icon: Pencil, shortcut: 'F2', hidden: multi, onClick: () => ops.renameFocused(side) },
-    { label: ops.usesTrash(p.session) ? tr('ops.trashTitle') : tr('common.delete'), icon: Trash2, shortcut: 'F8', danger: true, onClick: () => void ops.deleteSelection(side) },
-    { label: tr('ops.deletePermanently'), icon: Trash2, shortcut: 'Shift+Delete', danger: true, hidden: !ops.usesTrash(p.session), onClick: () => void ops.deleteSelection(side, true) },
+    { label: tr('ops.rename'), icon: Pencil, shortcut: sc('rename'), hidden: multi, onClick: () => ops.renameFocused(side) },
+    { label: ops.usesTrash(p.session) ? tr('ops.trashTitle') : tr('common.delete'), icon: Trash2, shortcut: sc('delete'), danger: true, onClick: () => void ops.deleteSelection(side) },
+    { label: tr('ops.deletePermanently'), icon: Trash2, shortcut: sc('deletePermanent'), danger: true, hidden: !ops.usesTrash(p.session), onClick: () => void ops.deleteSelection(side, true) },
     { separator: true },
-    { label: tr('ops.newFolder'), icon: FolderPlus, shortcut: 'F7', onClick: () => void ops.makeDir(side) },
-    { label: tr('ops.newFile'), icon: FilePlus, shortcut: 'Shift+F4', onClick: () => void ops.newFile(side) },
+    { label: tr('ops.newFolder'), icon: FolderPlus, shortcut: sc('mkdir'), onClick: () => void ops.makeDir(side) },
+    { label: tr('ops.newFile'), icon: FilePlus, shortcut: sc('newFile'), onClick: () => void ops.newFile(side) },
     { label: tr('ops.createLink'), icon: Link2, hidden: !caps?.symlinks, onClick: () => ops.createSymlink(side) },
     { separator: true },
     { label: multi ? tr('ops.copyPaths') : tr('ops.copyPath'), icon: ClipboardCopy, onClick: () => ops.copyPaths(side) },
     { label: tr('ops.copyUrl'), icon: Link2, hidden: multi, onClick: () => void ops.copyUrl(side) },
     { label: tr('ops.checksum'), icon: Hash, hidden: !file || multi, onClick: () => ops.showChecksum(side) },
-    { label: tr('fp.menu'), icon: Fingerprint, shortcut: 'Ctrl+K', onClick: () => ops.compareFingerprints(side) },
+    { label: tr('fp.menu'), icon: Fingerprint, shortcut: sc('fingerprints'), onClick: () => ops.compareFingerprints(side) },
     { label: tr('diff.menu'), icon: GitCompare, hidden: !file || multi, onClick: () => ops.diffWithOtherPanel(side) },
     { label: tr('ops.openTerminalHere'), icon: SquareTerminal, hidden: !info?.features.terminal, onClick: () => ops.openTerminalHere(side) },
-    { label: tr('commands.title'), icon: Command, submenu: commandsSubmenu(side) },
+    { label: tr('commands.title'), icon: Command, shortcut: sc('userMenu'), submenu: commandsSubmenu(side) },
     {
       label: tr('archive.title'),
       icon: Archive,
       hidden: !isLocal,
       submenu: [
-        { label: tr('archive.extractHere'), icon: PackageOpen, disabled: !(file && isArchive(entry.name)) || multi, onClick: () => void ops.extractArchive(side) },
-        { label: tr('archive.create'), icon: Archive, onClick: () => ops.createArchive(side) },
+        { label: tr('archive.extractHere'), icon: PackageOpen, shortcut: sc('unpack'), disabled: !(file && isArchive(entry.name)) || multi, onClick: () => void ops.extractArchive(side) },
+        { label: tr('archive.create'), icon: Archive, shortcut: sc('pack'), onClick: () => ops.createArchive(side) },
       ],
     },
     { separator: true },
-    { label: tr('ops.properties'), icon: Info, shortcut: 'Alt+Enter', onClick: () => void ops.showProperties(side) },
+    { label: tr('ops.properties'), icon: Info, shortcut: sc('properties'), onClick: () => void ops.showProperties(side) },
   ];
 }

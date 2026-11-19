@@ -53,7 +53,7 @@ browser runs on:
 
 | Command | |
 |---|---|
-| **Upload from this computer…** (Ctrl+U) | Upload files into the active panel's folder |
+| **Upload from this computer…** (Ctrl+U in the Rust Commander layout) | Upload files into the active panel's folder |
 | **Upload folder…** | Upload a whole folder |
 | **Download to this computer** | Download the selection; folders are streamed as a ZIP |
 

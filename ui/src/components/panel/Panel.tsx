@@ -12,6 +12,8 @@ import { reloadBookmarks, setActiveSide, useApp } from '../../store/app';
 import { goBack, goForward, goHome, goRoot, goUp, navigate, refresh, setFilter, switchSession, usePanels, viewRows, type Side } from '../../store/panels';
 import * as ops from '../../actions/fileOps';
 import { openSiteManager } from '../../actions/sessions';
+import { keyLabel, shortcutLabel, useKeymap } from '../../actions/shortcuts';
+import { rememberFocus, useOnUiRequest } from '../../store/uiRequests';
 import { attempt } from '../../store/toasts';
 import { MenuList, type MenuItem } from '../Menu';
 import { cx, IconButton } from '../ui';
@@ -34,9 +36,21 @@ export function SessionDot({ color }: { color?: string | null }) {
   return <span className="session-dot" style={{ background: color || 'transparent', borderColor: color || undefined }} />;
 }
 
-function Dropdown({ button, items, className, title, testId }: { button: ReactNode; items: () => MenuItem[]; className?: string; title?: string; testId?: string }) {
+/** `requestKey`: opens when `requestUi(requestKey)` is called (keyboard commands like Alt+F1). */
+function Dropdown({ button, items, className, title, testId, requestKey }: { button: ReactNode; items: () => MenuItem[]; className?: string; title?: string; testId?: string; requestKey?: string }) {
   const [open, setOpen] = useState<DOMRect | null>(null);
   const ref = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef<(() => void) | null>(null);
+  useOnUiRequest(requestKey, () => {
+    if (!ref.current) return;
+    if (!open) restoreFocus.current = rememberFocus();
+    setOpen(ref.current.getBoundingClientRect());
+  });
+  const close = () => {
+    setOpen(null);
+    restoreFocus.current?.();
+    restoreFocus.current = null;
+  };
   return (
     <>
       <button
@@ -57,8 +71,8 @@ function Dropdown({ button, items, className, title, testId }: { button: ReactNo
       </button>
       {open && (
         <>
-          <div className="menu-catcher" onMouseDown={() => setOpen(null)} />
-          <MenuList items={items()} x={open.left} y={open.bottom} anchor={open} onClose={() => setOpen(null)} />
+          <div className="menu-catcher" onMouseDown={close} />
+          <MenuList items={items()} x={open.left} y={open.bottom} anchor={open} onClose={close} />
         </>
       )}
     </>
@@ -79,13 +93,14 @@ function SessionPicker({ side }: { side: Side }) {
       onClick: () => void switchSession(side, s.id),
     })),
     { separator: true },
-    { label: t('session.newSession'), icon: Plus, shortcut: 'Ctrl+N', onClick: () => openSiteManager() },
+    { label: t('session.newSession'), icon: Plus, shortcut: shortcutLabel('siteManager'), onClick: () => openSiteManager() },
   ];
   return (
     <Dropdown
       className="session-picker"
       title={t('panel.sessionPicker')}
       testId={`session-picker-${side}`}
+      requestKey={`dropdown:session-${side}`}
       items={items}
       button={
         <>
@@ -109,7 +124,7 @@ function BookmarksMenu({ side }: { side: Side }) {
     const scope = (b: { scope: string }) => b.scope === '*' || (p.session === 'local' ? b.scope === 'local' : b.scope === s?.siteId);
     const list = bookmarks.filter(scope).sort((a, b) => a.name.localeCompare(b.name));
     return [
-      { label: t('bookmarks.add'), icon: BookmarkPlus, shortcut: 'Ctrl+D', onClick: () => void ops.addBookmark(side) },
+      { label: t('bookmarks.add'), icon: BookmarkPlus, shortcut: shortcutLabel('addBookmark'), onClick: () => void ops.addBookmark(side) },
       { separator: true },
       ...(list.length ? list.map((b) => ({ label: `${b.name}`, icon: Bookmark, shortcut: b.path.length > 28 ? '…' + b.path.slice(-26) : b.path, onClick: () => void navigate(side, p.session, b.path) })) : [{ label: t('bookmarks.none'), disabled: true }]),
       { separator: true },
@@ -121,19 +136,26 @@ function BookmarksMenu({ side }: { side: Side }) {
       },
     ];
   };
-  return <Dropdown className="icon-dropdown" title={t('bookmarks.title')} items={items} button={<Bookmark size={15} strokeWidth={1.75} />} />;
+  return <Dropdown className="icon-dropdown" title={t('bookmarks.title')} items={items} requestKey={`dropdown:bookmarks-${side}`} testId={`bookmarks-${side}`} button={<Bookmark size={15} strokeWidth={1.75} />} />;
 }
 
 function QuickFilter({ side }: { side: Side }) {
   const t = useT();
   const filter = usePanels((s) => s[side].filter);
   const [open, setOpen] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  // Ctrl+S in the Total Commander layout
+  useOnUiRequest(`filter:${side}`, () => {
+    setOpen(true);
+    setTimeout(() => input.current?.select());
+  });
   const show = open || !!filter;
-  if (!show) return <IconButton icon={Filter} title={t('panel.filter')} onClick={() => setOpen(true)} />;
+  if (!show) return <IconButton icon={Filter} title={t('panel.filter')} shortcut={shortcutLabel('quickFilter')} onClick={() => setOpen(true)} />;
   return (
     <div className="quick-filter">
       <Filter size={13} className="muted" />
       <input
+        ref={input}
         autoFocus={open && !filter}
         value={filter}
         placeholder={t('panel.filterPlaceholder')}
@@ -213,6 +235,8 @@ export function Panel({ side, hidden }: { side: Side; hidden?: boolean }) {
   const t = useT();
   const active = useApp((s) => s.activeSide === side);
   const p = usePanels((s) => s[side]);
+  const km = useKeymap();
+  const sc = (id: Parameters<typeof shortcutLabel>[0]) => shortcutLabel(id, km);
   return (
     <section
       className={cx('panel', active && 'active', hidden && 'panel-hidden')}
@@ -225,12 +249,12 @@ export function Panel({ side, hidden }: { side: Side; hidden?: boolean }) {
       <div className="panel-head">
         <SessionPicker side={side} />
         <div className="panel-nav">
-          <IconButton icon={ArrowLeft} title={t('nav.back')} shortcut="Alt+←" disabled={!p.back.length} onClick={() => void goBack(side)} />
-          <IconButton icon={ArrowRight} title={t('nav.forward')} shortcut="Alt+→" disabled={!p.fwd.length} onClick={() => void goForward(side)} />
+          <IconButton icon={ArrowLeft} title={t('nav.back')} shortcut={sc('back')} disabled={!p.back.length} onClick={() => void goBack(side)} />
+          <IconButton icon={ArrowRight} title={t('nav.forward')} shortcut={sc('forward')} disabled={!p.fwd.length} onClick={() => void goForward(side)} />
           <IconButton icon={ArrowUp} title={t('nav.up')} shortcut="Backspace" onClick={() => void goUp(side)} />
-          <IconButton icon={Slash} title={t('nav.root')} shortcut="Ctrl+\\" onClick={() => void goRoot(side)} />
-          <IconButton icon={Home} title={t('nav.home')} shortcut="Ctrl+Home" onClick={() => void goHome(side)} />
-          <IconButton icon={RefreshCw} title={t('common.refresh')} shortcut="Ctrl+R" className={p.loading ? 'spinning' : undefined} onClick={() => void refresh(side)} />
+          <IconButton icon={Slash} title={t('nav.root')} shortcut={sc('root')} onClick={() => void goRoot(side)} />
+          <IconButton icon={Home} title={t('nav.home')} shortcut={keyLabel('Ctrl+Home')} onClick={() => void goHome(side)} />
+          <IconButton icon={RefreshCw} title={t('common.refresh')} shortcut={sc('refresh')} className={p.loading ? 'spinning' : undefined} onClick={() => void refresh(side)} />
           <BookmarksMenu side={side} />
         </div>
         <div className="panel-head-spacer" />

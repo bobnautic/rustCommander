@@ -1,81 +1,54 @@
-// Global keyboard shortcuts (window level). Panel navigation keys live in FileTable.
-import { isAnyDialogOpen, openSingleton } from '../store/dialogs';
+// Global keyboard shortcuts (window level), taken from the active keyboard layout (see
+// lib/keymaps.ts). Panel navigation keys live in FileTable.
+import { isAnyDialogOpen } from '../store/dialogs';
 import { usePrompts } from '../store/misc';
 import { useEditors } from '../store/editors';
-import { setLayout, toggleDock, toggleHidden, toggleSidebar, useApp } from '../store/app';
-import { goBack, goForward, goRoot, refresh, type Side } from '../store/panels';
+import { useApp } from '../store/app';
 import { useContextMenu } from '../components/Menu';
-import { focusPathBar } from '../components/panel/PathBar';
-import * as ops from './fileOps';
-import { openSiteManager } from './sessions';
-import { undoLast } from './undo';
+import { comboFor, comboOf, keymapOf, type CommandId, type Keymap } from '../lib/keymaps';
+import { isAvailable, runCommand } from './commands';
 
-type Action = (side: Side, e: KeyboardEvent) => void;
+export { comboOf };
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 export const MOD = isMac ? '⌘' : 'Ctrl';
 
-/** Display form of a shortcut ('Ctrl+Shift+S' -> '⌘⇧S' on macOS). */
+const KEY_NAMES: [RegExp, string][] = [
+  [/ArrowLeft/g, '←'],
+  [/ArrowRight/g, '→'],
+  [/ArrowUp/g, '↑'],
+  [/ArrowDown/g, '↓'],
+  [/PageUp/g, 'PgUp'],
+  [/PageDown/g, 'PgDn'],
+  [/Num([+\-*/])/g, 'Num $1'],
+];
+
+/** Display form of a shortcut ('Ctrl+Shift+S' -> '⌘⇧S' on macOS, 'Alt+ArrowDown' -> 'Alt+↓'). */
 export function keyLabel(combo: string): string {
-  if (!isMac) return combo;
-  return combo.replace(/Ctrl\+/g, '⌘').replace(/Shift\+/g, '⇧').replace(/Alt\+/g, '⌥');
+  let s = combo;
+  for (const [re, name] of KEY_NAMES) s = s.replace(re, name);
+  if (!isMac) return s;
+  return s.replace(/Ctrl\+/g, '⌘').replace(/Shift\+/g, '⇧').replace(/Alt\+/g, '⌥');
 }
 
-const web = () => useApp.getState().info?.mode === 'web';
-
-export const BINDINGS: Record<string, Action> = {
-  F2: (s) => ops.renameFocused(s),
-  F3: (s) => ops.viewFocused(s),
-  F4: (s) => ops.editFocused(s),
-  'Shift+F4': (s) => void ops.newFile(s),
-  F5: (s) => ops.copySelection(s, false),
-  'Shift+F5': (s) => ops.copySelection(s, false, true),
-  F6: (s) => ops.copySelection(s, true),
-  'Shift+F6': (s) => ops.copySelection(s, true, true),
-  F7: (s) => void ops.makeDir(s),
-  F8: (s) => void ops.deleteSelection(s),
-  Delete: (s) => void ops.deleteSelection(s),
-  // Shift: delete for good instead of moving to the trash.
-  'Shift+F8': (s) => void ops.deleteSelection(s, true),
-  'Shift+Delete': (s) => void ops.deleteSelection(s, true),
-  'Ctrl+Z': () => void undoLast(),
-  'Alt+Enter': (s) => void ops.showProperties(s),
-  'Ctrl+R': (s) => void refresh(s),
-  F9: (s) => void refresh(s),
-  'Ctrl+H': () => toggleHidden(),
-  'Ctrl+N': () => openSiteManager(),
-  'Ctrl+T': (s) => ops.openTerminalHere(s),
-  'Ctrl+F': (s) => ops.findFiles(s),
-  'Ctrl+L': (s) => focusPathBar(s),
-  'Ctrl+D': (s) => void ops.addBookmark(s),
-  'Ctrl+Shift+S': () => ops.synchronize(),
-  'Ctrl+B': () => setLayout({ sidebarOpen: !useApp.getState().sidebarOpen }),
-  'Ctrl+Shift+E': () => toggleSidebar('explorer'),
-  'Ctrl+J': () => toggleDock(),
-  'Alt+ArrowLeft': (s) => void goBack(s),
-  'Alt+ArrowRight': (s) => void goForward(s),
-  'Ctrl+\\': (s) => void goRoot(s),
-  'Ctrl+Shift+C': (s) => ops.copyPaths(s),
-  'Ctrl+,': () => openSingleton('preferences', {}),
-  'Ctrl+P': () => ops.openFileDialog(),
-  'Ctrl+K': (s) => ops.compareFingerprints(s),
-  'Ctrl+U': (s) => {
-    if (web()) void ops.uploadFromComputer(s);
-  },
-  F1: () => openSingleton('shortcuts', {}),
-};
-
-export function comboOf(e: KeyboardEvent): string {
-  const parts: string[] = [];
-  if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
-  if (e.altKey) parts.push('Alt');
-  if (e.shiftKey) parts.push('Shift');
-  let k = e.key;
-  if (k.length === 1) k = k.toUpperCase();
-  if (k === 'Del') k = 'Delete';
-  parts.push(k);
-  return parts.join('+');
+/** The keyboard layout chosen in the preferences. */
+export function activeKeymap(): Keymap {
+  return keymapOf(useApp.getState().settings?.keymap);
 }
+
+/** Subscribes a component to the keyboard layout (re-renders when it changes). */
+export function useKeymap(): Keymap {
+  return keymapOf(useApp((s) => s.settings?.keymap));
+}
+
+/** Display form of the key that runs `cmd` in the active layout, if there is one. */
+export function shortcutLabel(cmd: CommandId, km: Keymap = activeKeymap()): string | undefined {
+  const c = comboFor(km, cmd);
+  return c ? keyLabel(c) : undefined;
+}
+
+/** Commands that also work while typing in a plain input field outside of dialogs. */
+const ALWAYS: ReadonlySet<CommandId> = new Set<CommandId>(['sidebar', 'dock', 'explorer']);
 
 function blocked(target: EventTarget | null, combo: string): boolean {
   if (isAnyDialogOpen() || usePrompts.getState().queue.length > 0) return true;
@@ -93,20 +66,18 @@ export function installShortcuts(): () => void {
   const onKey = (e: KeyboardEvent) => {
     if (e.defaultPrevented || e.isComposing) return;
     const combo = comboOf(e);
-    // a few shortcuts also work while typing in inputs outside of dialogs
-    const always = combo === 'Ctrl+B' || combo === 'Ctrl+J' || combo === 'Ctrl+Shift+E';
+    const cmd = activeKeymap().bindings[combo];
+    if (!cmd) return;
     const target = e.target as HTMLElement | null;
     if (blocked(target, combo)) {
       const inPlainInput = !!target?.closest?.('input, select') && !isAnyDialogOpen() && !useEditors.getState().visible && !usePrompts.getState().queue.length;
-      if (!(always && inPlainInput)) return;
+      if (!(ALWAYS.has(cmd) && inPlainInput)) return;
     }
-    const action = BINDINGS[combo];
-    if (!action) return;
+    if (!isAvailable(cmd)) return;
     e.preventDefault();
     e.stopPropagation();
-    action(useApp.getState().activeSide, e);
+    runCommand(cmd);
   };
   window.addEventListener('keydown', onKey);
   return () => window.removeEventListener('keydown', onKey);
 }
-

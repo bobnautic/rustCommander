@@ -359,6 +359,50 @@ body.resizing-col, body.resizing-col * { cursor: col-resize !important; user-sel
 .sb-spacer { flex: 1; }
 .sb-session { color: var(--muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
+/* ---------------------------------------------------------------- function key bar */
+.keybar {
+  display: flex;
+  flex: none;
+  height: 24px;
+  padding: 0 2px;
+  background: var(--chrome);
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  user-select: none;
+  overflow: hidden;
+}
+.kb-key {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.kb-num { display: flex; align-items: center; padding: 0 3px 0 6px; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+.kb-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  margin: 3px 2px 3px 0;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+.kb-label > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-key:hover:not(:disabled) .kb-label { background: var(--accent-weak-2); color: var(--accent); }
+.kb-key:active:not(:disabled) .kb-label { background: var(--accent); color: var(--accent-fg); }
+.kb-key:disabled { cursor: default; }
+.kb-key:disabled .kb-label { background: transparent; }
+.keybar-layer .kb-label { background: var(--accent-weak); color: var(--sel-fg); }
+.keybar-layer .kb-key:disabled .kb-label { background: transparent; }
+
 /* ---------------------------------------------------------------- toasts */
 .toasts {
   position: fixed;

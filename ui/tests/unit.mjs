@@ -170,6 +170,89 @@ try {
     }
     if (bad.length) throw new Error(bad.slice(0, 10).join('; '));
   });
+
+  // ---------------------------------------------------------------- keyboard layouts
+  const km = await load('/src/lib/keymaps.ts');
+  const key = (k, mods = {}, code) => ({ key: k, code, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods });
+
+  await test('keyboard layouts: Norton Commander is the default', () => {
+    eq(km.DEFAULT_KEYMAP, 'norton');
+    eq(km.keymapOf(undefined).id, 'norton');
+    eq(km.keymapOf('nonsense').id, 'norton');
+    eq(km.keymapOf('total').id, 'total');
+  });
+
+  await test('keyboard layouts: every combination is written the way comboOf produces it', () => {
+    const bad = [];
+    for (const id of km.KEYMAP_IDS) for (const c of Object.keys(km.KEYMAPS[id].bindings)) if (!km.isCanonical(c)) bad.push(`${id}: ${c}`);
+    for (const id of km.KEYMAP_IDS) for (const c of km.KEYMAPS[id].extras) if (!(c in km.KEYMAPS[id].bindings)) bad.push(`${id}: extra ${c} not bound`);
+    if (bad.length) throw new Error(bad.join(', '));
+  });
+
+  await test('keyboard layouts: Norton Commander key bar and Alt/Ctrl layers', () => {
+    const b = km.KEYMAPS.norton.bindings;
+    eq(km.KEY_BAR_KEYS.map((k) => b[k]), ['help', 'userMenu', 'view', 'edit', 'copy', 'move', 'mkdir', 'delete', 'menu', 'quit']);
+    eq(['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'].map((k) => b['Alt+' + k]), ['driveLeft', 'driveRight', 'viewExternal', 'editExternal', 'pack', 'unpack', 'find']);
+    eq(['F3', 'F4', 'F5', 'F6'].map((k) => b['Ctrl+' + k]), ['sortName', 'sortExt', 'sortTime', 'sortSize']);
+    eq([b['Shift+F4'], b['Ctrl+O'], b['Ctrl+U'], b['Ctrl+PageUp'], b['Ctrl+\\']], ['newFile', 'toggleTerminal', 'swapPanels', 'parentDir', 'root']);
+    eq(km.KEYMAPS.norton.quickSearch, 'alt');
+    eq(km.comboFor(km.KEYMAPS.norton, 'find'), 'Alt+F7', 'NC find');
+    eq(km.comboFor(km.KEYMAPS.norton, 'rename'), 'Shift+F6', 'NC rename');
+  });
+
+  await test('keyboard layouts: Total Commander', () => {
+    const b = km.KEYMAPS.total.bindings;
+    eq(km.KEY_BAR_KEYS.map((k) => b[k]), ['help', 'refresh', 'view', 'edit', 'copy', 'move', 'mkdir', 'delete', 'menu', 'menu']);
+    eq([b['Alt+F4'], b['Alt+F5'], b['Alt+F9'], b['Alt+F7'], b['Alt+ArrowDown']], ['quit', 'pack', 'unpack', 'find', 'dirHistory']);
+    eq([b['Shift+F2'], b['Shift+F4'], b['Shift+F6'], b['Shift+Delete']], ['compareDirs', 'newFile', 'rename', 'deletePermanent']);
+    eq([b['Ctrl+D'], b['Ctrl+S'], b['Ctrl+U'], b['Ctrl+F'], b['Ctrl+ArrowLeft'], b['Ctrl+Num+'], b['Ctrl+Num-']], ['hotlist', 'quickFilter', 'swapPanels', 'siteManager', 'toLeft', 'selectAll', 'selectNone']);
+    eq(km.KEYMAPS.total.quickSearch, 'ctrlAlt');
+  });
+
+  await test('keyboard layouts: "Rust Commander" keeps the layout of version 0.1', () => {
+    const before = {
+      F1: 'help', F2: 'rename', F3: 'view', F4: 'edit', 'Shift+F4': 'newFile', F5: 'copy', 'Shift+F5': 'copyQuick', F6: 'move', 'Shift+F6': 'moveQuick',
+      F7: 'mkdir', F8: 'delete', Delete: 'delete', 'Shift+F8': 'deletePermanent', 'Shift+Delete': 'deletePermanent', 'Ctrl+Z': 'undo', 'Alt+Enter': 'properties',
+      'Ctrl+R': 'refresh', F9: 'refresh', 'Ctrl+H': 'toggleHidden', 'Ctrl+N': 'siteManager', 'Ctrl+T': 'terminal', 'Ctrl+F': 'find', 'Ctrl+L': 'focusPath',
+      'Ctrl+D': 'addBookmark', 'Ctrl+Shift+S': 'sync', 'Ctrl+B': 'sidebar', 'Ctrl+Shift+E': 'explorer', 'Ctrl+J': 'dock', 'Alt+ArrowLeft': 'back',
+      'Alt+ArrowRight': 'forward', 'Ctrl+\\': 'root', 'Ctrl+Shift+C': 'copyPath', 'Ctrl+,': 'preferences', 'Ctrl+P': 'openFile', 'Ctrl+K': 'fingerprints', 'Ctrl+U': 'upload',
+    };
+    const b = km.KEYMAPS.rust.bindings;
+    const diff = Object.entries(before).filter(([k, v]) => b[k] !== v).map(([k, v]) => `${k}: ${b[k]} instead of ${v}`);
+    if (diff.length) throw new Error(diff.join(', '));
+    eq(km.KEYMAPS.rust.quickSearch, null);
+  });
+
+  await test('keyboard layouts: help groups keys per command and marks additions', () => {
+    const g = Object.fromEntries(km.groupedBindings(km.KEYMAPS.norton).map((x) => [x.cmd, x]));
+    eq(g.delete.combos, ['F8', 'Delete']);
+    eq(g.delete.extra, false, 'F8 is original');
+    eq(g.find.combos, ['Alt+F7', 'Ctrl+F']);
+    eq(g.undo.extra, true, 'undo is an addition');
+    eq(km.groupedBindings(km.KEYMAPS.rust).some((x) => x.extra), false);
+  });
+
+  await test('key events: combination names and quick search', () => {
+    eq(km.comboOf(key('s', { ctrlKey: true, shiftKey: true })), 'Ctrl+Shift+S');
+    eq(km.comboOf(key('k', { metaKey: true })), 'Ctrl+K');
+    eq(km.comboOf(key('F7', { altKey: true })), 'Alt+F7');
+    eq(km.comboOf(key('Del')), 'Delete');
+    eq(km.comboOf(key('+', { ctrlKey: true }, 'NumpadAdd')), 'Ctrl+Num+');
+    eq(km.comboOf(key('+', { ctrlKey: true }, 'Equal')), 'Ctrl++');
+    eq(km.splitCombo('Ctrl++'), { mods: ['Ctrl'], key: '+' });
+    eq(km.splitCombo('F5'), { mods: [], key: 'F5' });
+    eq(km.isCanonical('Shift+Ctrl+A'), false);
+    eq(km.isCanonical('Ctrl+a'), false);
+    eq(km.quickSearchChar(key('d', { altKey: true }, 'KeyD'), 'alt'), 'd');
+    eq(km.quickSearchChar(key('∂', { altKey: true }, 'KeyD'), 'alt'), 'd', 'macOS Option+D');
+    eq(km.quickSearchChar(key('d', { altKey: true, ctrlKey: true }, 'KeyD'), 'alt'), null, 'Ctrl+Alt in NC');
+    eq(km.quickSearchChar(key('m', { altKey: true, ctrlKey: true }, 'KeyM'), 'ctrlAlt'), 'm');
+    eq(km.quickSearchChar(key('m', { altKey: true }, 'KeyM'), 'ctrlAlt'), null, 'Alt alone in TC');
+    eq(km.quickSearchChar(key('m', {}, 'KeyM'), 'alt'), null, 'no modifier');
+    eq(km.quickSearchChar(key('ArrowLeft', { altKey: true }, 'ArrowLeft'), 'alt'), null, 'not a letter');
+    eq(km.keyBarLayer({ ctrl: false, alt: true, shift: false }), 'Alt+');
+    eq(km.keyBarLayer({ ctrl: true, alt: false, shift: true }), 'Ctrl+Shift+');
+  });
 } finally {
   await vite.close();
 }

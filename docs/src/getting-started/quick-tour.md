@@ -56,4 +56,7 @@ sessions, a local shell for the local file system.
 - **Ctrl+Shift+E** opens the [Remote Explorer](../guide/remote-explorer.md) for all your SSH targets.
 - **Ctrl+B** shows the sidebar with **Nearby** instances on your network.
 - **Ctrl+Shift+S** opens [Synchronization](../guide/synchronization.md).
-- **F1** lists every keyboard shortcut.
+- **F1** lists every keyboard shortcut. The keys follow Norton Commander; *View* →
+  **Keyboard layout** switches to Total Commander or the earlier Rust Commander layout.
+  The function key bar at the bottom shows what F1–F10 do (hold Shift, Ctrl or Alt for
+  the other layers).

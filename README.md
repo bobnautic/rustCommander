@@ -32,8 +32,9 @@ SFTP · SCP · FTP/FTPS · WebDAV · S3 · Azure · Google Cloud Storage — on 
 <td width="50%" valign="top">
 
 ### 🗂️ Classic commander, modern feel
-Two panels, session tabs, bookmarks, drag & drop and full keyboard control
-(F2–F8, Ins, Ctrl+…). Light and dark theme, English and German.
+Two panels, session tabs, bookmarks, drag & drop and full keyboard control with the
+**original Norton Commander layout** and function key bar — or Total Commander's.
+Light and dark theme, English and German.
 
 </td>
 <td width="50%" valign="top">
@@ -133,8 +134,9 @@ Download the latest version from the
 
 See [Installation](docs/src/getting-started/installation.md) for first-start notes, or
 [build it](#-building) yourself. Start **Rust Commander**, press **Ctrl+N** to open the Site
-Manager and connect. The keys work as in every classic commander: **F5** copy,
-**F6** move, **F7** new folder, **F8** delete, **F4** edit, **F1** all shortcuts.
+Manager and connect. The keys follow the original Norton Commander: **F5** copy,
+**F6** move, **F7** new folder, **F8** delete, **F4** edit, **F2** user menu, **F9** menu,
+**F1** all shortcuts. *View* → **Keyboard layout** switches to Total Commander.
 
 ### On a server (web mode)
 

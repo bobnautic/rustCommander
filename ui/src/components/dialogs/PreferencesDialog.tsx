@@ -12,6 +12,7 @@ import { useNearby } from '../../store/misc';
 import { attempt, toast } from '../../store/toasts';
 import { Badge, Button, Checkbox, Dialog, DialogButtons, Field, IconButton, NumberInput, Segmented, Select, Spinner, Tabs, TextInput, type TabDef } from '../ui';
 import { TransferOptionsForm } from './common';
+import { KEYMAP_IDS } from '../../lib/keymaps';
 
 type Tab = 'general' | 'transfer' | 'discovery' | 'server' | 'editor' | 'terminal' | 'security';
 
@@ -225,9 +226,19 @@ export default function PreferencesDialog({ props, close }: { props: DialogProps
               <Field label={t('prefs.sizeFormat')}>
                 <Segmented value={draft.sizeFormat} onChange={(v) => set('sizeFormat', v)} options={[{ value: 'auto', label: t('prefs.size.auto') }, { value: 'bytes', label: t('prefs.size.bytes') }]} />
               </Field>
+              <Field label={t('keymap.title')} hint={t('keymap.hint')} className="span2">
+                <Select value={draft.keymap ?? 'norton'} onChange={(e) => set('keymap', e.target.value as SettingsT['keymap'])} data-testid="prefs-keymap">
+                  {KEYMAP_IDS.map((id) => (
+                    <option key={id} value={id}>
+                      {t(`keymap.${id}`)}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
             </div>
             <div className="check-col">
               <Checkbox label={t('view.showHidden')} checked={draft.showHidden} onChange={(v) => set('showHidden', v)} />
+              <Checkbox label={t('keybar.show')} checked={draft.showKeyBar ?? true} onChange={(v) => set('showKeyBar', v)} />
               <Checkbox label={t('prefs.confirmDelete')} checked={draft.confirmDelete} onChange={(v) => set('confirmDelete', v)} />
               {!web && <Checkbox label={t('prefs.useTrash')} checked={draft.useTrash} onChange={(v) => set('useTrash', v)} />}
               <Checkbox label={t('prefs.confirmOverwrite')} checked={draft.confirmOverwrite} onChange={(v) => set('confirmOverwrite', v)} />

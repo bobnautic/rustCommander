@@ -15,7 +15,7 @@ can be opened straight from the app.
 | Area | Highlights |
 |---|---|
 | Protocols | SFTP, SCP, FTP, FTPS (explicit and implicit), WebDAV(S), Amazon S3 and S3-compatible storage (MinIO, Wasabi, R2, Ceph …), Azure Blob Storage, Google Cloud Storage, and other Rust Commander instances |
-| Interface | Commander layout with two panels, session tabs, bookmarks, synchronized browsing, directory comparison, full keyboard control (F2–F8, Ins, Ctrl+…), light and dark theme, English and German |
+| Interface | Commander layout with two panels, session tabs, bookmarks, synchronized browsing, directory comparison, full keyboard control with the Norton Commander (default) or Total Commander keyboard layout and a function key bar, light and dark theme, English and German |
 | Transfers | Background queue with pause/resume/cancel/retry, resumable transfers, overwrite rules, **fingerprint comparison before copying**, preserved timestamps and permissions, file masks, speed limit, parallel transfers, server-to-server copies |
 | Synchronization | One-way or two-way comparison by size, time or checksum, mirror mode, a **checklist** before anything runs, and "keep remote folder up to date" |
 | Editor | Built-in editor for local and remote files with language detection, **linting**, **formatting**, change markers and a diff view |

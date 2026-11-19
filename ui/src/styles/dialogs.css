@@ -340,6 +340,7 @@
 .shortcut-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; }
 .shortcut-row { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
 .shortcut-row .kbd { min-width: 92px; }
+.shortcut-extra { color: var(--muted); cursor: help; }
 
 /* ---------------------------------------------------------------- full-screen dialogs on phones */
 @media (max-width: 799px) {

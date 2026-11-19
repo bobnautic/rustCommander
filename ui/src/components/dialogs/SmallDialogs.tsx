@@ -5,16 +5,18 @@ import {
 } from 'lucide-react';
 import type { ChecksumAlgo, ExecOutput, Peer, SessionInfo } from '../../api/types';
 import { call, mode } from '../../api/client';
-import { useT } from '../../i18n';
+import { useT, type TKey } from '../../i18n';
 import * as P from '../../lib/paths';
-import { useApp } from '../../store/app';
+import { patchSettings, useApp } from '../../store/app';
 import type { ConfirmProps, DialogPropsMap, InputProps } from '../../store/dialogs';
 import { navigate, getPanel, selectByMask, type Side } from '../../store/panels';
 import { attempt, toast } from '../../store/toasts';
 import { copyText } from '../../actions/fileOps';
 import { connectPeer } from '../../actions/sessions';
-import { keyLabel } from '../../actions/shortcuts';
-import { Badge, Button, Checkbox, Dialog, DialogButtons, Field, Segmented, Spinner, TextInput } from '../ui';
+import { keyLabel, useKeymap } from '../../actions/shortcuts';
+import { COMMANDS, isAvailable } from '../../actions/commands';
+import { groupedBindings, KEYMAP_IDS, type KeymapId } from '../../lib/keymaps';
+import { Badge, Button, Checkbox, Dialog, DialogButtons, Field, Segmented, Select, Spinner, TextInput } from '../ui';
 
 type DP<K extends keyof DialogPropsMap> = { props: DialogPropsMap[K]; close: () => void };
 
@@ -330,30 +332,66 @@ export function AboutDialog({ close }: DP<'about'>) {
   );
 }
 
-const SHORTCUT_DOCS: [string, string][] = [
-  ['F2', 'ops.rename'], ['F3', 'ops.view'], ['F4', 'ops.edit'], ['Shift+F4', 'ops.newFile'], ['F5', 'ops.copy'], ['Shift+F5', 'help.copyNoDialog'],
-  ['F6', 'ops.move'], ['Shift+F6', 'help.moveNoDialog'], ['F7', 'ops.newFolder'], ['F8', 'common.delete'], ['Shift+Delete', 'ops.deletePermanently'], ['Ctrl+Z', 'undo.menu'], ['Alt+Enter', 'ops.properties'],
-  ['Ctrl+R', 'common.refresh'], ['Ctrl+H', 'view.showHidden'], ['Ctrl+N', 'session.newSession'], ['Ctrl+T', 'terminal.open'], ['Ctrl+F', 'find.title'],
-  ['Ctrl+L', 'help.focusPath'], ['Ctrl+D', 'bookmarks.add'], ['Ctrl+Shift+S', 'sync.title'], ['Ctrl+B', 'sidebar.toggle'], ['Ctrl+Shift+E', 'explorer.title'], ['Ctrl+J', 'dock.title'],
-  ['Ctrl+Shift+C', 'ops.copyPath'], ['Ctrl+,', 'prefs.title'], ['Alt+←/→', 'help.backForward'],
-  ['Tab', 'help.switchPanel'], ['Insert / Space', 'help.toggleSelect'], ['Ctrl+A', 'panel.selectAll'], ['+ / −', 'select.byMask'], ['*', 'select.invert'],
-  ['Backspace', 'nav.up'], ['Enter', 'ops.open'], ['A–Z', 'help.typeAhead'], ['Ctrl+P', 'openFile.title'], ['Ctrl+K', 'fp.menu'],
+/** Keys of the file panels; the same in every keyboard layout. */
+const PANEL_DOCS: [string, TKey][] = [
+  ['Tab', 'help.switchPanel'], ['Enter', 'ops.open'], ['Backspace', 'nav.up'], ['Insert / Space', 'help.toggleSelect'],
+  ['Ctrl+A', 'panel.selectAll'], ['Ctrl+Shift+A', 'select.none'], ['+ / −', 'select.byMask'], ['*', 'select.invert'],
+  ['A–Z', 'help.typeAhead'], ['Shift+F10', 'help.contextMenu'],
+];
+
+const EDITOR_DOCS: [string, TKey][] = [
   ['Ctrl+S', 'editor.save'], ['Shift+Alt+F', 'editor.format'], ['Ctrl+G', 'editor.goToLine'], ['Ctrl+/', 'editor.tools.comment'],
   ['Ctrl+Shift+M', 'editor.problems'], ['F8', 'help.nextProblem'], ['Ctrl+= / Ctrl+-', 'help.editorZoom'],
 ];
 
+function ShortcutRows({ rows }: { rows: { keys: string; label: string; extra?: string }[] }) {
+  return (
+    <div className="shortcut-grid">
+      {rows.map((r) => (
+        <div key={r.keys + r.label} className="shortcut-row">
+          <kbd className="kbd">{r.keys}</kbd>
+          <span>
+            {r.label}
+            {r.extra && (
+              <span className="shortcut-extra" title={r.extra}>
+                {' '}*
+              </span>
+            )}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ShortcutsDialog({ close }: DP<'shortcuts'>) {
   const t = useT();
+  const km = useKeymap();
+  useApp((s) => s.info); // availability of commands
+  const commands = groupedBindings(km)
+    .filter((g) => isAvailable(g.cmd))
+    .map((g) => ({ keys: g.combos.map(keyLabel).join(' / '), label: t(COMMANDS[g.cmd].label), extra: g.extra ? t('help.extra') : undefined }));
+  const quick = km.quickSearch === 'alt' ? 'Alt+A–Z' : km.quickSearch === 'ctrlAlt' ? 'Ctrl+Alt+A–Z' : null;
+  const panel = PANEL_DOCS.map(([k, label]) => ({ keys: keyLabel(k), label: t(label) }));
+  if (quick) panel.splice(9, 0, { keys: keyLabel(quick), label: t('help.quickSearch') });
   return (
-    <Dialog title={t('help.shortcuts')} icon={Keyboard} onClose={close} onSubmit={close} width={620} footer={<div className="dlg-foot-buttons"><Button variant="primary" onClick={close}>{t('common.close')}</Button></div>}>
-      <div className="shortcut-grid">
-        {SHORTCUT_DOCS.map(([k, label]) => (
-          <div key={k + label} className="shortcut-row">
-            <kbd className="kbd">{keyLabel(k)}</kbd>
-            <span>{t(label as Parameters<typeof t>[0])}</span>
-          </div>
-        ))}
-      </div>
+    <Dialog title={t('help.shortcuts')} icon={Keyboard} onClose={close} onSubmit={close} width={680} footer={<div className="dlg-foot-buttons"><Button variant="primary" onClick={close}>{t('common.close')}</Button></div>}>
+      <Field label={t('keymap.title')} inline>
+        <Select value={km.id} onChange={(e) => void patchSettings((s) => ({ ...s, keymap: e.target.value as KeymapId }))} data-testid="shortcuts-keymap">
+          {KEYMAP_IDS.map((id) => (
+            <option key={id} value={id}>
+              {t(`keymap.${id}`)}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <div className="section-title">{t('help.layoutKeys')}</div>
+      <ShortcutRows rows={commands} />
+      {km.extras.length > 0 && <p className="muted small">{t('help.extraNote')}</p>}
+      <div className="section-title">{t('help.panelKeys')}</div>
+      <ShortcutRows rows={panel} />
+      <div className="section-title">{t('help.editorKeys')}</div>
+      <ShortcutRows rows={EDITOR_DOCS.map(([k, label]) => ({ keys: keyLabel(k), label: t(label) }))} />
     </Dialog>
   );
 }
