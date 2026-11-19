@@ -3,20 +3,24 @@
 All operations work the same on every protocol, as far as the protocol allows (object
 stores, for example, have no permissions or symlinks).
 
+The keys below are those of the default keyboard layout, Norton Commander. The
+[keyboard shortcuts](../reference/keyboard-shortcuts.md) list the Total Commander and
+Rust Commander layouts; *View* → **Keyboard layout** switches between them.
+
 | Key | Operation |
 |---|---|
 | Enter | Open folder / file |
-| F2 | Rename in place |
+| Shift+F6 | Rename in place |
 | F3 / F4 | View / [edit](editor.md) |
 | Shift+F4 | New file |
 | F5 / F6 | [Copy / move](transfers.md) to the other panel |
-| Shift+F5 / Shift+F6 | Copy / move without the dialog |
 | F7 | New folder |
 | F8, Delete | Delete (recursive deletes run as a background job); local files go to the trash |
 | Shift+F8, Shift+Delete | Delete permanently (local files skip the trash) |
 | Ctrl+Z | Undo the last rename or move |
 | Alt+Enter | Properties |
 | Ctrl+Shift+C | Copy the full path(s) to the clipboard |
+| F2 | User menu with your [custom commands](#custom-commands) |
 
 *Files* → **Create link…** creates a symbolic link.
 
@@ -82,7 +86,8 @@ can reveal a file in its panel, view or edit it, or copy its path.
 ## Custom commands
 
 *Tools* → **Custom commands…** defines your own commands, which then appear under
-*Commands* → **Custom commands**. A command can run on the server of the session or
+*Commands* → **Custom commands** and, in the Norton Commander layout, in the user menu
+(**F2**). A command can run on the server of the session or
 locally, once per file or once for the whole selection, show its output and refresh the
 panel afterwards.
 

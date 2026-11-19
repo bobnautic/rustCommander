@@ -106,6 +106,11 @@ pub struct Settings {
     pub restore_sessions: bool,
     /// Continue interrupted transfers after a restart (otherwise they come back paused).
     pub resume_jobs: bool,
+    /// Keyboard layout: "norton" (Norton Commander), "total" (Total Commander) or "rust"
+    /// (the layout of Rust Commander 0.1). Unknown values are treated as "norton".
+    pub keymap: String,
+    /// Show the function key bar (F1–F10) above the status bar.
+    pub show_key_bar: bool,
     pub transfer: TransferOptions,
     pub discovery: DiscoverySettings,
     pub server: ServerSettings,
@@ -127,11 +132,34 @@ impl Default for Settings {
             use_trash: true,
             restore_sessions: true,
             resume_jobs: true,
+            keymap: "norton".into(),
+            show_key_bar: true,
             transfer: TransferOptions::default(),
             discovery: DiscoverySettings::default(),
             server: ServerSettings::default(),
             editor: EditorSettings::default(),
             terminal: TerminalSettings::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keyboard_layout_defaults_to_norton_commander() {
+        // settings.json written before keyboard layouts existed
+        let s: Settings = serde_json::from_str(r#"{ "theme": "dark", "showHidden": true }"#).unwrap();
+        assert_eq!(s.keymap, "norton");
+        assert!(s.show_key_bar);
+        assert_eq!(s.theme, "dark");
+
+        let s: Settings = serde_json::from_str(r#"{ "keymap": "total", "showKeyBar": false }"#).unwrap();
+        assert_eq!(s.keymap, "total");
+        assert!(!s.show_key_bar);
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["keymap"], "total");
+        assert_eq!(v["showKeyBar"], false);
     }
 }

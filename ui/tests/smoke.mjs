@@ -366,14 +366,15 @@ try {
     await kp.keyboard.press('Tab');
   });
 
-  await step('F7 new folder, F2 inline rename, Ctrl+Z undo, F8 to the trash, Shift+Delete', async () => {
+  await step('F7 new folder, Shift+F6 inline rename, Ctrl+Z undo, F8 to the trash, Shift+Delete', async () => {
     await kp.keyboard.press('F7');
     await kdialog('New folder').waitFor();
     await kp.keyboard.type('smoke-dir');
     await kp.keyboard.press('Enter');
     await krow('smoke-dir').waitFor();
     await until(async () => (await cursor()) === 'smoke-dir' || cursor(), 'new folder focused');
-    await kp.keyboard.press('F2');
+    // Norton Commander layout (the default): Shift+F6 renames in place, F6 is RenMov
+    await kp.keyboard.press('Shift+F6');
     await kp.locator('.ft-rename').waitFor();
     await kp.keyboard.press('Control+a');
     await kp.keyboard.type('smoke-renamed');
@@ -484,6 +485,94 @@ try {
     await kp.keyboard.press('Escape');
   });
   await kctx.close();
+}
+
+// ---------------------------------------------------------------- keyboard layouts
+{
+  const lctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' });
+  const lp = await lctx.newPage();
+  watch(lp, 'layouts');
+  const lrow = (name) => lp.locator(`[data-testid="table-left"] .ft-row[data-name="${name}"]`);
+  const ldialog = (title) => lp.locator('.dlg').filter({ has: lp.locator('h2', { hasText: title }) });
+  const barLabels = () => lp.locator('[data-testid="keybar"] .kb-label').allInnerTexts();
+  const lcursor = () => lp.locator('[data-testid="table-left"] .ft-row.cursor').getAttribute('data-name');
+  const waitFor = async (fn, msg, ms = 4000) => {
+    const end = Date.now() + ms;
+    let last;
+    while (Date.now() < end) {
+      last = await fn();
+      if (last === true) return;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error(`${msg} (got ${last})`);
+  };
+  try {
+    await step('keyboard layout Norton Commander: key bar, Alt layer, F2 user menu, F9 menu, Alt+letter search', async () => {
+      await lp.goto(`${base}/?mock=1&fast=1`);
+      await lrow('Documents').waitFor();
+      // F10 Quit only exists in the desktop app
+      const labels = (await barLabels()).join(',');
+      assert(labels === 'Help,Menu,View,Edit,Copy,RenMov,Mkdir,Delete,PullDn,', `key bar: ${labels}`);
+      await lp.locator('[data-testid="table-left"]').focus();
+      await lp.keyboard.down('Alt');
+      await waitFor(async () => (await lp.locator('[data-testid="keybar-F1"] .kb-label').innerText()) === 'Left' || 'no Alt layer', 'Alt layer');
+      const alt = (await barLabels()).join(',');
+      await lp.keyboard.up('Alt');
+      assert(alt.startsWith('Left,Right,View..') && alt.includes('Find'), `Alt layer: ${alt}`);
+      await lp.keyboard.press('F2');
+      await lp.locator('.menu', { hasText: 'User menu' }).waitFor();
+      await lp.keyboard.press('Escape');
+      await lp.locator('.menu').waitFor({ state: 'detached' });
+      await lp.locator('[data-testid="table-left"]').focus();
+      await lp.keyboard.press('F9');
+      await lp.locator('[data-testid="menu-new-session"]').waitFor();
+      await lp.keyboard.press('Escape');
+      // the file list gets the focus back
+      await waitFor(async () => (await lp.evaluate(() => !!document.activeElement?.closest('[data-testid="table-left"]'))) || 'focus elsewhere', 'focus after F9');
+      await lp.keyboard.press('Alt+F2');
+      await lp.locator('.menu', { hasText: 'New session' }).waitFor();
+      await lp.keyboard.press('Escape');
+      await waitFor(async () => (await lp.evaluate(() => !!document.activeElement?.closest('[data-testid="table-left"]'))) || 'focus elsewhere', 'focus after Alt+F2');
+      await lp.keyboard.press('Home');
+      await lp.keyboard.press('Alt+m');
+      await waitFor(async () => (await lcursor()) === 'Music' || lcursor(), 'Alt+M jumps to Music');
+      await snap(lp, 'keybar-norton.png');
+    });
+
+    await step('keyboard layout Total Commander: chosen in the View menu, F2 rereads, Ctrl+D hotlist, help lists the layout', async () => {
+      await lp.locator('[data-testid="menu-view"]').click();
+      await lp.locator('[data-testid="menu-keymap"]').hover();
+      await lp.locator('[data-testid="menu-keymap-total"]').click();
+      await waitFor(async () => (await barLabels())[1] === 'Reread' || (await barLabels()).join(','), 'F2 is Reread');
+      const labels = (await barLabels()).join(',');
+      assert(labels === 'Help,Reread,View,Edit,Copy,RenMov,Mkdir,Delete,PullDn,PullDn', `key bar: ${labels}`);
+      await lp.locator('[data-testid="table-left"]').focus();
+      await lp.keyboard.press('Control+d');
+      await lp.locator('.menu', { hasText: 'Bookmark this folder' }).waitFor();
+      await lp.keyboard.press('Escape');
+      // Alt+↓: folder history
+      await lrow('Music').dblclick();
+      await lp.locator('[data-testid="table-left"] .ft-row[data-name="01 - Intro.mp3"]').waitFor();
+      await lp.locator('[data-testid="table-left"]').focus();
+      await lp.keyboard.press('Alt+ArrowDown');
+      const hist = lp.locator('.menu', { hasText: 'Folder history' });
+      await hist.waitFor();
+      await hist.locator('.menu-item', { hasText: '/home/demo' }).first().click();
+      await lrow('Music').waitFor();
+      await lp.locator('[data-testid="table-left"]').focus();
+      await lp.keyboard.press('F1');
+      const help = ldialog('Keyboard shortcuts');
+      await help.waitFor();
+      assert((await help.locator('[data-testid="shortcuts-keymap"]').inputValue()) === 'total', 'help shows another layout');
+      assert((await help.innerText()).includes('Directory hotlist'), 'help does not list Ctrl+D');
+      // back to Norton Commander from the help dialog
+      await help.locator('[data-testid="shortcuts-keymap"]').selectOption('norton');
+      await waitFor(async () => (await barLabels())[1] === 'Menu' || (await barLabels())[1], 'back to Norton Commander');
+      await lp.keyboard.press('Escape');
+    });
+  } finally {
+    await lctx.close();
+  }
 }
 
 {

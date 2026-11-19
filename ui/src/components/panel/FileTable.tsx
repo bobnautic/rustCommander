@@ -8,6 +8,8 @@ import { CATEGORY_ICON, categoryOf, isDirLike } from '../../lib/fileTypes';
 import { formatDate, formatPerms, formatSize } from '../../lib/format';
 import * as P from '../../lib/paths';
 import { load, save } from '../../lib/storage';
+import { quickSearchChar } from '../../lib/keymaps';
+import { activeKeymap } from '../../actions/shortcuts';
 import { setActiveSide, useApp } from '../../store/app';
 import {
   allRows, extendRange, goHome, goUp, invertSelection, other, PARENT, patchPanel, refresh, selectAll, selectNone, selectRange,
@@ -343,16 +345,22 @@ export function FileTable({ side, active }: { side: Side; active: boolean }) {
     }
     switch (e.key) {
       case 'ArrowDown':
-        moveCursor(cursorIdx < 0 ? 0 : cur + 1, e.shiftKey);
+        // Alt+↓ (folder history) belongs to the keyboard layout
+        if (e.altKey) handled = false;
+        else moveCursor(cursorIdx < 0 ? 0 : cur + 1, e.shiftKey);
         break;
       case 'ArrowUp':
-        moveCursor(cur - 1, e.shiftKey);
+        if (e.altKey) handled = false;
+        else moveCursor(cur - 1, e.shiftKey);
         break;
       case 'PageDown':
-        moveCursor(cur + page, e.shiftKey);
+        // Ctrl+PgDn / Ctrl+PgUp (open folder / parent folder) belong to the keyboard layout
+        if (ctrl) handled = false;
+        else moveCursor(cur + page, e.shiftKey);
         break;
       case 'PageUp':
-        moveCursor(cur - page, e.shiftKey);
+        if (ctrl) handled = false;
+        else moveCursor(cur - page, e.shiftKey);
         break;
       case 'Home':
         if (e.ctrlKey || e.metaKey) void goHome(side);
@@ -426,9 +434,11 @@ export function FileTable({ side, active }: { side: Side; active: boolean }) {
       else ops.selectMask(side, e.key === '+');
       handled = true;
     }
-    const typed = !ctrl && !e.altKey && e.key.length === 1 && (e.key !== ' ' || !!typeahead);
+    // Letters jump to a file; so do letters with the layout's quick-search modifier
+    // (Alt in Norton Commander, Ctrl+Alt in Total Commander).
+    const typed = !ctrl && !e.altKey && e.key.length === 1 && (e.key !== ' ' || !!typeahead) ? e.key : handled ? null : quickSearchChar(e, activeKeymap().quickSearch);
     if (!handled && typed) {
-      const buf = (typeahead + e.key).toLowerCase();
+      const buf = (typeahead + typed).toLowerCase();
       const start = typeahead ? cur : cur + 1;
       let found = -1;
       for (let n = 0; n < rows.length; n++) {

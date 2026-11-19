@@ -20,6 +20,7 @@ import { Splitter } from './components/Splitter';
 import { Dock } from './components/dock/Dock';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
+import { KeyBar } from './components/KeyBar';
 import { DialogHost } from './components/DialogHost';
 import { PromptHost } from './components/PromptHost';
 import { ConflictHost } from './components/ConflictHost';
@@ -168,6 +169,7 @@ function Workbench() {
           <Dock />
         </div>
       </div>
+      <KeyBar />
       <StatusBar />
       <EditorHost />
       <DialogHost />

@@ -444,6 +444,8 @@ function defaultSettings(): T.Settings {
     useTrash: true,
     restoreSessions: true,
     resumeJobs: true,
+    keymap: 'norton',
+    showKeyBar: true,
     transfer: defaultTransfer(),
     discovery: { enabled: true, port: 8823, instanceName: 'demo-workstation', intervalSecs: 30 },
     server: { autoStart: false, bind: '0.0.0.0', port: 8822, tls: true, allowTerminal: true },

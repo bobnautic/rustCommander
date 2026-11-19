@@ -99,6 +99,6 @@ instead of the upload time, so synchronizations by time work with buckets too.
 ## Web mode: browser uploads and downloads
 
 In the [web mode](web-mode.md) there are extra commands for the computer running the
-browser: **Upload from this computer…** (Ctrl+U), **Upload folder…** and **Download to
+browser: **Upload from this computer…** (Ctrl+U in the Rust Commander keyboard layout), **Upload folder…** and **Download to
 this computer**.
 Folders are downloaded as a ZIP stream.

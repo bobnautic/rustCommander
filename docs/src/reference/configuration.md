@@ -50,7 +50,7 @@ system's temporary folder.
 
 | Tab | Settings |
 |---|---|
-| General | Language, theme, hidden files, size format, what double-click / Enter does on a file (edit, open with the default application, copy to the other panel), confirmations before deleting and overwriting, moving deleted local files to the trash, whether the copy/move dialog is shown |
+| General | Language, theme, [keyboard layout](keyboard-shortcuts.md) (Norton Commander, Total Commander, Rust Commander) and function key bar, hidden files, size format, what double-click / Enter does on a file (edit, open with the default application, copy to the other panel), confirmations before deleting and overwriting, moving deleted local files to the trash, whether the copy/move dialog is shown |
 | Transfer | Default transfer settings, number of parallel jobs, reconnecting the sessions and continuing the jobs of the last run |
 | Editor | Show problems, format when saving, line width for formatting, tab width, word wrap |
 | Terminal | Font family, font size, scrollback lines |

@@ -432,6 +432,10 @@ export interface Settings {
   restoreSessions: boolean;
   /** Continue interrupted transfers after a restart (otherwise they come back paused). */
   resumeJobs: boolean;
+  /** Keyboard layout (see lib/keymaps.ts). */
+  keymap: 'norton' | 'total' | 'rust';
+  /** Show the function key bar (F1–F10) above the status bar. */
+  showKeyBar: boolean;
   transfer: TransferOptions;
   discovery: { enabled: boolean; port: number; instanceName: string; intervalSecs: number };
   server: { autoStart: boolean; bind: string; port: number; tls: boolean; allowTerminal: boolean };
