@@ -34,6 +34,7 @@ on:
       - .github/workflows/release.yml
       - scripts/set-version.mjs
       - scripts/release-notes.sh
+      - scripts/changelog.sh
       - src-tauri/tauri.conf.json
 
 permissions:
@@ -377,6 +378,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
       PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
       DRAFT: ${{ inputs.draft || false }}
     steps:
@@ -428,9 +430,12 @@ jobs:
             gh release edit "$TAG" --notes-file notes.md >/dev/null
           else
             # a draft first: nobody sees the release before all files are on it
-            # changes since the previous release (pull requests and contributors)
-            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" --jq .body |
-              bash scripts/release-notes.sh index/downloads.md > notes.md
+            # the version's section of CHANGELOG.md, then the changes since the previous
+            # release (pull requests and contributors)
+            {
+              bash scripts/changelog.sh "$VERSION"
+              gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" --jq .body
+            } | bash scripts/release-notes.sh index/downloads.md > notes.md
             args=(--title "Rust Commander $TAG" --notes-file notes.md --verify-tag --draft)
             if [ "$PRERELEASE" = true ]; then args+=(--prerelease); fi
             gh release create "$TAG" dist/* "${args[@]}"

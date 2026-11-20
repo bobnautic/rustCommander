@@ -1,7 +1,7 @@
 {
   "name": "rust-commander",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.0.2",
   "description": "Rust Commander — workspace scripts (the UI lives in ui/)",
   "scripts": {
     "tauri": "tauri",
