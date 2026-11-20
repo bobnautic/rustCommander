@@ -7,8 +7,11 @@ as `-beta.1`).
 
 ## Cutting a release
 
-1. Optional, but keeps `main` in step with the releases: set the version in the repository
-   and merge it.
+1. Add a section `## [0.2.0] - <date>` to `CHANGELOG.md` with the changes since the previous
+   release (*Added*, *Changed*, *Fixed*, … as in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)).
+   The workflow puts this section into the release notes, above the generated list of pull
+   requests. Optional, but keeps `main` in step with the releases: set the version in the
+   repository as well. Merge both.
 
    ```bash
    node scripts/set-version.mjs 0.2.0     # Cargo workspace + Cargo.lock, tauri.conf.json, package.json files
@@ -48,7 +51,7 @@ skipped.
 | Desktop (Linux) | `ubuntu-22.04` | `.AppImage`, `.deb` and `.rpm` |
 | rcmd | Linux x86_64/aarch64, macOS arm64/x86_64, Windows x64 | `rcmd-<version>-<platform>.tar.gz` / `.zip` |
 | Downloads | | checks that exactly the expected files were built (none missing or empty), `SHA256SUMS.txt`, the download table |
-| Publish release | | the GitHub release with all files, `SHA256SUMS.txt`, download table and generated release notes |
+| Publish release | | the GitHub release with all files, `SHA256SUMS.txt`, download table, the version's section of `CHANGELOG.md` and generated release notes |
 
 The release is only created when **every** job succeeded. It is created as a draft, all files
 are uploaded and compared with the built ones (size and SHA-256 digest), and only then it is

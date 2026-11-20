@@ -146,7 +146,7 @@ Download the latest version from the
 | `rustCommander-<version>-macos-universal.dmg` | `rustCommander-<version>-windows-x64-setup.exe`<br>or `…-portable.exe` | `.AppImage` · `.deb` · `.rpm` |
 
 See [Installation](docs/src/getting-started/installation.md) for first-start notes, or
-[build it](#-building) yourself. Start **Rust Commander**, press **Ctrl+N** to open the Site
+[build it](#-building) yourself. What changed in each version: [CHANGELOG.md](CHANGELOG.md). Start **Rust Commander**, press **Ctrl+N** to open the Site
 Manager and connect. The keys follow the original Norton Commander: **F5** copy,
 **F6** move, **F7** new folder, **F8** delete, **F4** edit, **F2** user menu, **F9** menu,
 **F1** all shortcuts. *View* → **Keyboard layout** switches to Total Commander.
