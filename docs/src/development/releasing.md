@@ -7,39 +7,60 @@ as `-beta.1`).
 
 ## Cutting a release
 
-1. Add a section `## [0.2.0] - <date>` to `CHANGELOG.md` with the changes since the previous
-   release (*Added*, *Changed*, *Fixed*, … as in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)).
-   The workflow puts this section into the release notes, above the generated list of pull
-   requests. Optional, but keeps `main` in step with the releases: set the version in the
-   repository as well. Merge both.
+A release is a pull request that sets the new version. Merging it releases it.
+
+1. On a branch, set the version and add a section `## [0.2.0] - <date>` to `CHANGELOG.md`
+   with the changes since the previous release (*Added*, *Changed*, *Fixed*, … as in
+   [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)). The workflow puts this section
+   into the release notes, between the download table and the generated list of pull
+   requests.
 
    ```bash
    node scripts/set-version.mjs 0.2.0     # Cargo workspace + Cargo.lock, tauri.conf.json, package.json files
+   # edit CHANGELOG.md
    git commit -am "Release 0.2.0"
    ```
 
-2. Start the release on GitHub under **Actions → Release → Run workflow**: pick the branch
-   (`main`), enter the version (`0.2.0`) and run it. The tag `v0.2.0` is created on that
-   branch's latest commit once everything is built. Pushing a tag works the same way:
+2. Open a pull request. Because it changes `src-tauri/tauri.conf.json`, the Release workflow
+   builds and checks all downloads on it (as workflow artifacts, nothing is published).
 
-   ```bash
-   git tag v0.2.0
-   git push origin v0.2.0
-   ```
+3. Merge it. The push to `main` changes the version in `src-tauri/tauri.conf.json`, so the
+   workflow releases that commit: it builds and tests everything, creates the tag `v0.2.0`
+   on it and publishes the release. About 25 minutes later the release is on the Releases
+   page, with all downloads.
 
-   About 25 minutes later the release is on the Releases page, with all downloads.
+A push to `main` releases only when it **changes** the version and the tag `v<version>`
+does **not** exist yet. Other changes to `tauri.conf.json` start the workflow too, but it
+stops after the *Version* job (all other jobs show as skipped). If the changelog has no
+section for the version, the run shows a warning and the release notes list only the pull
+requests.
 
-   A release created by hand works as well: **Releases → Draft a new release**, choose a
-   *new* tag `v0.2.0`, write the notes and **Publish release**. Publishing creates the tag,
-   which starts the workflow. Until the files are built (about 25 minutes) the release shows
-   a note with a link to the build; then the files and the download table are added above
-   the notes written there. The tag must not exist before, otherwise no build starts. This
-   way needs the repository setting *immutable releases* to be off, because the files are
-   added after publishing.
+### Other ways to start a release
 
-The workflow always builds with the version from the tag (it runs `set-version.mjs` itself),
-so the installers, the app and `rcmd --version` carry that version even if step 1 was
-skipped.
+- **Actions → Release → Run workflow**: pick the branch (`main`), enter the version
+  (`0.2.0`) and run it. The tag `v0.2.0` is created on that branch's latest commit once
+  everything is built. Useful to release a commit without changing the version in the
+  repository, or with the **draft** / **dry-run** options below.
+- **Pushing a tag**:
+
+  ```bash
+  git tag v0.2.0
+  git push origin v0.2.0
+  ```
+
+  If the version merged into `main` already has its tag (for example because it was pushed
+  by hand first), the push to `main` releases nothing.
+- **A release created by hand**: **Releases → Draft a new release**, choose a *new* tag
+  `v0.2.0`, write the notes and **Publish release**. Publishing creates the tag, which starts
+  the workflow. Until the files are built (about 25 minutes) the release shows a note with a
+  link to the build; then the files and the download table are added above the notes
+  written there. The tag must not exist before, otherwise no build starts. This way needs the
+  repository setting *immutable releases* to be off, because the files are added after
+  publishing.
+
+The workflow always builds with the version of the release (it runs `set-version.mjs`
+itself), so the installers, the app and `rcmd --version` carry that version even when it was
+started with a tag or **Run workflow** without setting the version in the repository.
 
 ## What the workflow does
 

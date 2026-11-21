@@ -4,9 +4,18 @@ All notable changes to Rust Commander are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-The release workflow puts the section of the released version into the release notes on
-GitHub (see [Releasing](docs/src/development/releasing.md)), so add an entry here before
-cutting a release.
+Changes collect under *Unreleased*. For a release, that section is renamed to the version
+and date in the pull request that sets the new version; merging it publishes the release, and
+the release notes on GitHub take this section (see
+[Releasing](docs/src/development/releasing.md)).
+
+## [Unreleased]
+
+### Changed
+
+- **Releases start by themselves:** merging a pull request that sets a new version
+  (`node scripts/set-version.mjs <version>`) into `main` builds, tags and publishes the
+  release. Run workflow, pushing a tag and releases created on GitHub keep working.
 
 ## [0.0.2] - 2026-11-20
 
@@ -125,5 +134,6 @@ First version: a two-panel file manager in Rust and Tauri with a web mode, LAN d
 a read-only remote explorer for SSH hosts, an editor with linting and formatting, and
 release builds for macOS, Windows and Linux plus the `rcmd` CLI.
 
+[Unreleased]: https://github.com/bobnautic/rustCommander/compare/v0.0.2...HEAD
 [0.0.2]: https://github.com/bobnautic/rustCommander/compare/v0.0.1-alpha...v0.0.2
 [0.0.1-alpha]: https://github.com/bobnautic/rustCommander/releases/tag/v0.0.1-alpha
