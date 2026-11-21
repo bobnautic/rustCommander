@@ -1,7 +1,10 @@
 name: Release
 
-# A release is cut with "Run workflow" on the Actions tab (enter the version; the tag is
-# created on the selected branch's commit) or by pushing a version tag:
+# A release is cut by merging a new version into main: when a push to main changes the
+# version in src-tauri/tauri.conf.json (node scripts/set-version.mjs 0.2.0) and the tag
+# v<version> does not exist yet, that commit is released and tagged. The release notes take
+# the version's section of CHANGELOG.md. Other ways: "Run workflow" on the Actions tab (enter
+# the version; the tag is created on the selected branch's commit) or pushing a version tag:
 #   git tag v0.2.0 && git push origin v0.2.0
 # Every platform is built and tested first. Then the release is created as a draft with all
 # downloads (DMG, Windows installer and portable exe, AppImage/deb/rpm, rcmd archives,
@@ -16,6 +19,9 @@ name: Release
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+    # a new version merged into main; path filters do not apply to tag pushes
+    branches: [main]
+    paths: [src-tauri/tauri.conf.json]
   workflow_dispatch:
     inputs:
       version:
@@ -55,17 +61,38 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       prerelease: ${{ steps.version.outputs.prerelease }}
+      # false for a push to main that does not release anything: all other jobs are skipped
+      build: ${{ steps.version.outputs.build }}
     steps:
       - uses: actions/checkout@v7
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_type == 'branch')
       - name: Determine version
         id: version
         env:
           INPUT_VERSION: ${{ inputs.version }}
+          BEFORE: ${{ github.event.before }}
         run: |
-          case "$GITHUB_EVENT_NAME" in
-            workflow_dispatch) v="${INPUT_VERSION#v}" ;;
-            pull_request) v="$(jq -r .version src-tauri/tauri.conf.json)" ;;
+          build=true
+          case "$GITHUB_EVENT_NAME/$GITHUB_REF_TYPE" in
+            workflow_dispatch/*) v="${INPUT_VERSION#v}" ;;
+            pull_request/*) v="$(jq -r .version src-tauri/tauri.conf.json)" ;;
+            push/branch)
+              # main: release the version of tauri.conf.json if this push changed it and it
+              # has no tag yet (a tag pushed by hand, or an earlier release, wins)
+              v="$(jq -r .version src-tauri/tauri.conf.json)"
+              old=""
+              if git fetch --quiet --depth=1 origin "$BEFORE" 2>/dev/null; then
+                old="$(git show "$BEFORE:src-tauri/tauri.conf.json" 2>/dev/null | jq -r .version)" || old=""
+              fi
+              if [ "$v" = "$old" ]; then
+                echo "Version $v unchanged, nothing to release" | tee -a "$GITHUB_STEP_SUMMARY"
+                build=false
+              elif git ls-remote --exit-code --tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "refs/tags/v$v" >/dev/null; then
+                echo "Tag v$v exists already, nothing to release" | tee -a "$GITHUB_STEP_SUMMARY"
+                build=false
+              elif [ -z "$(bash scripts/changelog.sh "$v" 2>/dev/null)" ]; then
+                echo "::warning::CHANGELOG.md has no section for $v, the release notes only list the pull requests"
+              fi ;;
             *) v="${GITHUB_REF_NAME#v}" ;;
           esac
           if ! [[ "$v" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
@@ -80,13 +107,14 @@ jobs:
             echo "version=$v"
             echo "tag=v$v"
             echo "prerelease=$([[ "$v" == *-* ]] && echo true || echo false)"
+            echo "build=$build"
           } >> "$GITHUB_OUTPUT"
-          echo "Version **v$v**" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$build" = true ]; then echo "Version **v$v**" >> "$GITHUB_STEP_SUMMARY"; fi
 
   announce:
     name: Announce build
     needs: prepare
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -119,12 +147,15 @@ jobs:
 
   checks:
     name: Checks
-    if: github.event_name != 'pull_request' # CI runs on the pull request itself
+    needs: prepare
+    # CI runs on the pull request itself
+    if: github.event_name != 'pull_request' && needs.prepare.outputs.build == 'true'
     uses: ./.github/workflows/ci.yml
 
   desktop:
     name: Desktop (${{ matrix.name }})
     needs: prepare
+    if: needs.prepare.outputs.build == 'true'
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -230,6 +261,7 @@ jobs:
   rcmd:
     name: rcmd (${{ matrix.name }})
     needs: prepare
+    if: needs.prepare.outputs.build == 'true'
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -403,10 +435,11 @@ jobs:
             exit 1
           fi
       - name: Tag
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || github.ref_type == 'branch'
         run: |
           set -euo pipefail
-          # A pushed tag brings its own. For "Run workflow" it is created now on the built commit.
+          # A pushed tag brings its own. For "Run workflow" and a version merged into main it is
+          # created now on the built commit.
           # Tags made with the workflow token start no second run of this workflow, so
           # publishing a draft by hand later does not rebuild everything.
           if sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha 2>/dev/null); then
@@ -471,7 +504,7 @@ jobs:
   build-failed:
     name: Report failed build
     needs: [prepare, checks, desktop, rcmd, downloads, publish]
-    if: ${{ (failure() || cancelled()) && github.event_name == 'push' && needs.prepare.result == 'success' }}
+    if: ${{ (failure() || cancelled()) && github.event_name == 'push' && github.ref_type == 'tag' && needs.prepare.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
