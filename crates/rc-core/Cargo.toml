@@ -66,7 +66,7 @@ x509-cert = { version = "0.3", default-features = false, optional = true }
 
 # FTP / FTPS
 # `deprecated` enables implicit FTPS (`connect_secure_implicit`).
-suppaftp = { version = "12.2", default-features = false, features = ["tokio", "tokio-rustls-ring", "deprecated"], optional = true }
+suppaftp = { version = "13.0", default-features = false, features = ["tokio", "tokio-rustls-ring", "deprecated"], optional = true }
 
 # WebDAV / S3 / Azure / GCS
 opendal = { version = "0.59", default-features = false, features = [
